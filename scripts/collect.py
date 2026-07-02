@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-# KAMIS 소매가격 수집 -> app/data.json / data.js  (품종별 그룹핑)
-# 실행: python3 scripts/collect.py   (jq 불필요, 표준 파이썬만)
+# KAMIS 소매가격 수집 -> app 루트 data.json/data.js  (지역별 x 품종별)
+# 실행: python3 scripts/collect.py   (표준 파이썬만, jq 불필요)
 import json, os, urllib.parse, urllib.request, datetime
 HERE=os.path.dirname(os.path.abspath(__file__)); PROJ=os.path.dirname(HERE)
 KEY=os.environ.get("KAMIS_KEY") or open(os.path.join(HERE,".serviceKey")).read().strip()
 OUT=os.path.join(PROJ,"data.json")
-# 날짜 범위 (KAMIS 단일날짜 0버그 회피용 범위). 실행 시 최근 주로 바꿔도 됨
 _t=datetime.date.today(); _d=datetime.timedelta
 def _y(x): return x.strftime("%Y%m%d")
 TW=(_y(_t-_d(days=5)), _y(_t-_d(days=1)))    # 최근 5일 -> 그중 가장 최근 조사일
-BL=(_y(_t-_d(days=12)), _y(_t-_d(days=8)))   # 약 1주일 전 -> 그중 가장 최근 조사일
+BL=(_y(_t-_d(days=12)), _y(_t-_d(days=8)))   # 약 1주일 전
 ITEMS=[
   ('111','쌀','100'),
   ('112','찹쌀','100'),
@@ -130,54 +129,65 @@ ITEMS=[
   ('662','고등어필렛','600'),
   ('663','전어','600'),
 ]
-
 URL="https://apis.data.go.kr/B552845/perDay/price"
 def fetch(item,ctgry,s,e):
-    q={"serviceKey":KEY,"returnType":"JSON","numOfRows":"900","cond[se_cd::EQ]":"01",
+    q={"serviceKey":KEY,"returnType":"JSON","numOfRows":"2000","cond[se_cd::EQ]":"01",
        "cond[ctgry_cd::EQ]":ctgry,"cond[item_cd::EQ]":item,
        "cond[exmn_ymd::GTE]":s,"cond[exmn_ymd::LTE]":e}
     try:
-        with urllib.request.urlopen(URL+"?"+urllib.parse.urlencode(q),timeout=25) as r:
+        with urllib.request.urlopen(URL+"?"+urllib.parse.urlencode(q),timeout=15) as r:
             return json.load(r)
     except Exception:
         return {}
 def rows(js):
     try: return js["response"]["body"]["items"]["item"] or []
     except Exception: return []
-def group(js):
-    # 품종별로 "가장 최근 조사일(exmn_ymd 최대)"의 가격만 사용 -> 그날의 정보
-    d={}
+def latest_by_region(js):
+    # {sgg_cd: {"name":sgg_nm, "v": {(vc,vn): {"date","p":[],"unit"}}}}
+    out={}
     for it in rows(js):
-        k=(it.get("vrty_cd"), it.get("vrty_nm") or "")
+        sgg=it.get("sgg_cd"); 
+        if not sgg: continue
         try: p=float(it.get("exmn_dd_prc"))
         except Exception: continue
         dt=str(it.get("exmn_ymd") or "")
-        g=d.get(k)
+        reg=out.setdefault(sgg, {"name":it.get("sgg_nm") or sgg, "v":{}})
+        k=(it.get("vrty_cd"), it.get("vrty_nm") or "")
+        g=reg["v"].get(k)
         if g is None or dt> g["date"]:
-            g={"date":dt,"p":[p],"bok":([p] if it.get("mrkt_nm")=="복조리" else []),
-               "unit":(str(it.get("unit_sz") or "")+str(it.get("unit") or "")),"asof":dt}
-            d[k]=g
+            reg["v"][k]={"date":dt,"p":[p],"unit":(str(it.get("unit_sz") or "")+str(it.get("unit") or ""))}
         elif dt==g["date"]:
             g["p"].append(p)
-            if it.get("mrkt_nm")=="복조리": g["bok"].append(p)
-    return d
+    return out
 def avg(a): return int(sum(a)/len(a)) if a else None
-out=[]
+
+byRegion={}      # sgg_cd -> list of item dicts
+region_names={}  # sgg_cd -> name
 for code,name,ctgry in ITEMS:
-    tw=group(fetch(code,ctgry,*TW)); bl=group(fetch(code,ctgry,*BL))
-    n=0
-    for k,g in tw.items():
-        if not g["p"]: continue
-        now=avg(g["p"]); bok=avg(g["bok"])
-        b=bl.get(k); base=avg(b["p"]) if b else None
-        pct=int((now-base)/base*100) if base else None
-        vn=k[1]; label=vn if vn and vn!=name else name
-        out.append({"code":f"{code}-{k[0]}","name":label,"price":now,"unit":g["unit"],
-                    "base":base,"pct":pct,"bokjori":bok,"asof":g.get("asof")}); n+=1
-    print(f"{name}: {n}품종")
-data={"updated":datetime.date.today().isoformat(),
-      "market":"복조리시장(서울 강동구 길동)","items":out}
-open(OUT,"w",encoding="utf-8").write(json.dumps(data,ensure_ascii=False,indent=2))
+    tw=latest_by_region(fetch(code,ctgry,*TW))
+    bl=latest_by_region(fetch(code,ctgry,*BL))
+    for sgg,reg in tw.items():
+        region_names[sgg]=reg["name"]
+        blv=bl.get(sgg,{}).get("v",{})
+        for k,g in reg["v"].items():
+            now=avg(g["p"])
+            if now is None: continue
+            b=blv.get(k); base=avg(b["p"]) if b else None
+            pct=int((now-base)/base*100) if base else None
+            vn=k[1]
+            if vn and vn!=name: label = vn if (name in vn) else f"{name} {vn}"
+            else: label = name
+            byRegion.setdefault(sgg,[]).append(
+                {"code":f"{code}-{k[0]}","name":label,"price":now,"unit":g["unit"],
+                 "base":base,"pct":pct,"asof":g["date"]})
+    print(f"{name}: {sum(len(v['v']) for v in tw.values())}건 / 지역 {len(tw)}곳")
+
+# 지역 목록: 항목 많은 순
+regions=sorted(region_names.keys(), key=lambda s:-len(byRegion.get(s,[])))
+data={"updated":_t.isoformat(),
+      "regions":[{"code":s,"name":region_names[s]} for s in regions],
+      "byRegion":byRegion}
+open(OUT,"w",encoding="utf-8").write(json.dumps(data,ensure_ascii=False,indent=1))
 open(os.path.join(PROJ,"data.js"),"w",encoding="utf-8").write(
     "window.PRICE_DATA = "+json.dumps(data,ensure_ascii=False)+";\n")
-print(f"\n생성 완료: {len(out)}개 항목 -> {OUT}")
+print(f"\n생성 완료: 지역 {len(regions)}곳 -> {OUT}")
