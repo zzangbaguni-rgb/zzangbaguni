@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# KAMIS 소매가격 수집 -> app 루트 data.json/data.js  (지역별 x 품종별)
+# KAMIS 소매가격 수집 -> 저장소 루트 data.json/data.js  (지역별 · 품목당 1줄 = 대표 품종)
 # 실행: python3 scripts/collect.py   (표준 파이썬만, jq 불필요)
 import json, os, urllib.parse, urllib.request, datetime
 HERE=os.path.dirname(os.path.abspath(__file__)); PROJ=os.path.dirname(HERE)
@@ -7,7 +7,7 @@ KEY=os.environ.get("KAMIS_KEY") or open(os.path.join(HERE,".serviceKey")).read()
 OUT=os.path.join(PROJ,"data.json")
 _t=datetime.date.today(); _d=datetime.timedelta
 def _y(x): return x.strftime("%Y%m%d")
-TW=(_y(_t-_d(days=5)), _y(_t-_d(days=1)))    # 최근 5일 -> 그중 가장 최근 조사일
+TW=(_y(_t-_d(days=5)), _y(_t-_d(days=1)))    # 최근 5일 -> 가장 최근 조사일
 BL=(_y(_t-_d(days=12)), _y(_t-_d(days=8)))   # 약 1주일 전
 ITEMS=[
   ('111','쌀','100'),
@@ -142,47 +142,42 @@ def fetch(item,ctgry,s,e):
 def rows(js):
     try: return js["response"]["body"]["items"]["item"] or []
     except Exception: return []
-def latest_by_region(js):
-    # {sgg_cd: {"name":sgg_nm, "v": {(vc,vn): {"date","p":[],"unit"}}}}
+def gather(js):
+    # {sgg: {"name":sgg_nm, "v": { vrty_cd: {"cnt","latest","p":[],"unit"} }}}
     out={}
     for it in rows(js):
-        sgg=it.get("sgg_cd"); 
+        sgg=it.get("sgg_cd")
         if not sgg: continue
         try: p=float(it.get("exmn_dd_prc"))
         except Exception: continue
         dt=str(it.get("exmn_ymd") or "")
-        reg=out.setdefault(sgg, {"name":it.get("sgg_nm") or sgg, "v":{}})
-        k=(it.get("vrty_cd"), it.get("vrty_nm") or "")
-        g=reg["v"].get(k)
-        if g is None or dt> g["date"]:
-            reg["v"][k]={"date":dt,"p":[p],"unit":(str(it.get("unit_sz") or "")+str(it.get("unit") or ""))}
-        elif dt==g["date"]:
-            g["p"].append(p)
+        reg=out.setdefault(sgg,{"name":it.get("sgg_nm") or sgg,"v":{}})
+        vc=it.get("vrty_cd")
+        e=reg["v"].setdefault(vc,{"cnt":0,"latest":"","p":[],"unit":""})
+        e["cnt"]+=1
+        e["unit"]=(str(it.get("unit_sz") or "")+str(it.get("unit") or ""))
+        if dt> e["latest"]: e["latest"]=dt; e["p"]=[p]
+        elif dt==e["latest"]: e["p"].append(p)
     return out
 def avg(a): return int(sum(a)/len(a)) if a else None
 
-byRegion={}      # sgg_cd -> list of item dicts
-region_names={}  # sgg_cd -> name
+byRegion={}; region_names={}
 for code,name,ctgry in ITEMS:
-    tw=latest_by_region(fetch(code,ctgry,*TW))
-    bl=latest_by_region(fetch(code,ctgry,*BL))
+    tw=gather(fetch(code,ctgry,*TW)); bl=gather(fetch(code,ctgry,*BL))
     for sgg,reg in tw.items():
+        if not reg["v"]: continue
+        rep=max(reg["v"], key=lambda k: reg["v"][k]["cnt"])   # 대표 품종 = 관측 최다
+        e=reg["v"][rep]; now=avg(e["p"])
+        if now is None: continue
+        bv=bl.get(sgg,{}).get("v",{}).get(rep)
+        base=avg(bv["p"]) if bv else None
+        pct=int((now-base)/base*100) if base else None
         region_names[sgg]=reg["name"]
-        blv=bl.get(sgg,{}).get("v",{})
-        for k,g in reg["v"].items():
-            now=avg(g["p"])
-            if now is None: continue
-            b=blv.get(k); base=avg(b["p"]) if b else None
-            pct=int((now-base)/base*100) if base else None
-            vn=k[1]
-            if vn and vn!=name: label = vn if (name in vn) else f"{name} {vn}"
-            else: label = name
-            byRegion.setdefault(sgg,[]).append(
-                {"code":f"{code}-{k[0]}","name":label,"price":now,"unit":g["unit"],
-                 "base":base,"pct":pct,"asof":g["date"]})
-    print(f"{name}: {sum(len(v['v']) for v in tw.values())}건 / 지역 {len(tw)}곳")
+        byRegion.setdefault(sgg,[]).append(
+            {"code":code,"name":name,"price":now,"unit":e["unit"],
+             "base":base,"pct":pct,"asof":e["latest"]})
+    print(f"{name}: 지역 {len(tw)}곳")
 
-# 지역 목록: 항목 많은 순
 regions=sorted(region_names.keys(), key=lambda s:-len(byRegion.get(s,[])))
 data={"updated":_t.isoformat(),
       "regions":[{"code":s,"name":region_names[s]} for s in regions],
@@ -190,4 +185,4 @@ data={"updated":_t.isoformat(),
 open(OUT,"w",encoding="utf-8").write(json.dumps(data,ensure_ascii=False,indent=1))
 open(os.path.join(PROJ,"data.js"),"w",encoding="utf-8").write(
     "window.PRICE_DATA = "+json.dumps(data,ensure_ascii=False)+";\n")
-print(f"\n생성 완료: 지역 {len(regions)}곳 -> {OUT}")
+print(f"\n생성 완료: 지역 {len(regions)}곳, 품목당 1줄 -> {OUT}")
