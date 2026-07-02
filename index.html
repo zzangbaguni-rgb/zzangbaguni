@@ -77,6 +77,13 @@
 
   .count{margin:14px 18px 6px;font-size:12.5px;color:#a8a8a8;font-weight:600;display:flex;justify-content:space-between;align-items:center}
   .gtoggle{color:var(--accent);font-weight:800;cursor:pointer;font-size:13px}
+  .acbox{margin:2px 16px 0;display:none}
+  .acbox.show{display:block;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.06)}
+  .acitem{display:flex;justify-content:space-between;align-items:center;padding:13px 16px;font-size:15.5px;cursor:pointer;border-top:1px solid #f4f1f4}
+  .acitem:first-child{border-top:0}
+  .acitem:active{background:var(--accent-soft)}
+  .acitem .acp{color:var(--sub);font-size:13px;font-weight:700;flex:0 0 auto;margin-left:10px}
+  .acitem .acadd{color:var(--accent);font-weight:800;margin-left:8px}
   .freq{display:flex;gap:7px;flex-wrap:wrap;padding:6px 16px 0}
   .freqlabel{width:100%;font-size:12px;color:var(--sub);font-weight:700;margin-bottom:2px}
   .fchip{display:inline-flex;align-items:center;gap:6px;background:var(--accent-soft);border:1px solid #f6d3e2;color:#c14d7e;border-radius:999px;padding:7px 11px 7px 13px;font-size:13.5px;font-weight:700}
@@ -137,6 +144,7 @@
   /* 시세 */
   .qlabel{font-size:13px;color:var(--sub);margin:20px 18px 8px;font-weight:700}
   .secttl{font-size:13.5px;color:var(--sub);font-weight:800;margin:22px 18px 8px}
+  .asof{font-size:12.5px;color:#b0a7b4;font-weight:700;margin:4px 18px 0}
   .quick{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px}
   .qchip{background:#fff;border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:15px;cursor:pointer;white-space:nowrap}
   .qchip .d{color:var(--down);font-weight:800;margin-left:4px}
@@ -188,6 +196,7 @@
     <div class="addbar">
       <input id="box" type="text" placeholder="뭐 사지?" autocomplete="off" enterkeyhint="done">
     </div>
+    <div class="acbox" id="ac"></div>
     <div class="freq" id="freq"></div>
     <div class="count" id="count"></div>
     <div id="cart"></div>
@@ -233,8 +242,9 @@
     <h3 style="margin:8px 20px 4px">시세는 어떻게 계산하나요?</h3>
     <div class="mcard" style="box-shadow:none;border:0;margin:6px 12px 0">
       <p><b>출처</b> · KAMIS(농산물유통정보) 일별 소매가격, 상품(上) 등급 기준. 공공데이터포털에 공개된 데이터예요.</p>
-      <p><b>▲▼ 등락</b> · 이번 주 값을 <b>지난주</b> 값과 비교해요. (이번주 − 지난주) ÷ 지난주 × 100 이 <b>±12%</b>를 넘으면 ▲비쌈 / ▼쌈, 그 안이면 "비슷".</p>
+      <p><b>▲▼ 등락</b> · 가장 최근 조사일 값을 <b>약 1주일 전</b> 값과 비교해요. 차이가 <b>±12%</b>를 넘으면 ▲비쌈 / ▼쌈, 그 안이면 "비슷".</p>
       <p><b>가격 기준</b> · 선택한 지역의 시장 조사값을 우선 표시하고, 없으면 전국 소매평균을 써요.</p>
+      <p><b>갱신 / 날짜</b> · 매일 아침 자동으로 최신 시세를 받아와요. 단, KAMIS는 <b>평일만 조사</b>해서 표시값은 항상 <b>가장 최근 조사일 기준</b>이에요(주말·공휴일엔 직전 평일 값, 새벽엔 전날 값일 수 있음). 화면 맨 위 "○월 ○일 조사 기준"이 바로 그 날짜예요.</p>
       <p><b>주의</b> · 실제 좌판·흥정·등급에 따라 달라요. 정확한 영수증이 아니라 "지금 싼가/비싼가" 신호예요.</p>
       <p style="color:#b3aab5">로그인·서버 없이 이 브라우저에만 저장돼요.</p>
     </div>
@@ -243,20 +253,15 @@
 
 <script src="data.js"></script>
 <script>
-const DATA = window.PRICE_DATA || {items:[]};
-
-const REGIONS = [
-  {code:'11740', name:'서울 강동구', hasData:true},
-  {code:'11110', name:'서울 종로구', hasData:false},
-  {code:'11680', name:'서울 강남구', hasData:false},
-  {code:'26440', name:'부산 강서구', hasData:false},
-  {code:'27110', name:'대구 중구',   hasData:false},
-  {code:'28110', name:'인천 중구',   hasData:false},
-  {code:'29110', name:'광주 동구',   hasData:false},
-  {code:'30110', name:'대전 동구',   hasData:false},
-];
-const RKEY='region_v1';
-let region = REGIONS.find(r=>r.code===localStorage.getItem(RKEY)) || REGIONS.find(r=>r.hasData);
+const DATA = window.PRICE_DATA || {};
+// 지역별 구조(byRegion) 지원 · 구버전 flat(items)도 호환
+const HAS_REGIONS = Array.isArray(DATA.regions) && !!DATA.byRegion;
+const REGIONS = (HAS_REGIONS ? DATA.regions : [{code:'_', name:(DATA.market||'기본')}])
+  .map(r=>({code:r.code, name:r.name, hasData:true}));
+function itemsOf(code){ return HAS_REGIONS ? (DATA.byRegion[code]||[]) : (DATA.items||[]); }
+const RKEY='region_v2';
+let region = REGIONS.find(r=>r.code===localStorage.getItem(RKEY)) || REGIONS[0] || {code:'_',name:'기본',hasData:true};
+function curItems(){ return itemsOf(region.code); }
 
 const SEASON = ["오이","호박","감자","방울토마토","열무","가지","옥수수"];
 const STORE = {
@@ -271,8 +276,8 @@ const STORE = {
   콩나물:"물에 담가 밀폐 냉장, 2~3일 내.", 방울토마토:"꼭지 떼고 씻지 말고 냉장."
 };
 
-function findItem(name){ if(!region.hasData) return null;
-  const t=name.replace(/\s/g,''); return DATA.items.find(i=> t.includes(i.name)) || null; }
+function findItem(name){ if(!region) return null;
+  const t=name.replace(/\s/g,''); return curItems().find(i=> t.includes(i.name)) || null; }
 function badge(it){
   if(!it || it.price==null||it.pct==null) return '';
   if(it.pct>=12) return `<div class="b up">▲ ${it.pct}%</div>`;
@@ -280,7 +285,7 @@ function badge(it){
   return `<div class="b flat">비슷</div>`;
 }
 function priceText(it){ if(!it) return '';
-  const p=it.bokjori ?? it.price; if(p==null) return '';
+  const p=it.price; if(p==null) return '';
   return `<div class="p">${p.toLocaleString()}<span class="u">원/${it.unit||''}</span></div>`; }
 function channelTag(it){
   if(!it || it.bokjori==null || it.price==null || it.price===0) return '';
@@ -324,7 +329,20 @@ function addByName(n,quiet){ n=(n||'').trim(); if(!n) return;
   store.history[n]=(store.history[n]||0)+1;
   if(quiet) toast(`${n} 담음`);
   save(); render(); }
-function addFromBox(){ const b=document.getElementById('box'); addByName(b.value); b.value=''; b.focus(); }
+function addFromBox(){ const b=document.getElementById('box'); addByName(b.value); b.value=''; hideAC(); b.focus(); }
+function hideAC(){ const ac=document.getElementById('ac'); if(ac){ ac.classList.remove('show'); ac.innerHTML=''; } }
+function renderAC(){
+  const b=document.getElementById('box'), ac=document.getElementById('ac'); if(!ac) return;
+  const q=(b.value||'').trim().replace(/\s/g,'');
+  if(!q){ hideAC(); return; }
+  const seen=new Set(), list=[];
+  curItems().forEach(it=>{ if(it.price!=null && it.name.replace(/\s/g,'').includes(q) && !seen.has(it.name)){ seen.add(it.name); list.push(it); } });
+  const top=list.slice(0,8);
+  if(!top.length){ hideAC(); return; }
+  ac.innerHTML=top.map(it=>`<div class="acitem" onmousedown="event.preventDefault()" onclick="pickAC('${esc(it.name)}')"><span>${it.name}</span><span style="display:flex;align-items:center">${it.price!=null?`<span class="acp">${it.price.toLocaleString()}원</span>`:''}<span class="acadd">＋</span></span></div>`).join('');
+  ac.classList.add('show');
+}
+function pickAC(n){ const b=document.getElementById('box'); addByName(n,false); b.value=''; hideAC(); b.focus(); }
 function toggle(i){ active().items[i].done=!active().items[i].done; save(); render(); }
 let lastDel=null;
 function del(i){ const arr=active().items; lastDel={item:arr[i], date:store.cur, index:i}; arr.splice(i,1); save(); render(); toastUndo(`${lastDel.item.name} 삭제`); }
@@ -346,6 +364,8 @@ function flipTip(id){ const e=document.getElementById(id); if(e) e.classList.tog
 // 한글 IME: 조합 중 엔터는 무시 (상추→"상추"+"추" 중복 방지)
 const boxEl=document.getElementById('box');
 boxEl.addEventListener('keydown',e=>{ if(e.key==='Enter' && !e.isComposing && e.keyCode!==229){ e.preventDefault(); addFromBox(); } });
+boxEl.addEventListener('input', renderAC);
+boxEl.addEventListener('blur', ()=>setTimeout(hideAC,150));
 const psEl=document.getElementById('priceSearch');
 if(psEl) psEl.addEventListener('input',e=>{ priceQuery=e.target.value; renderPriceTab(); });
 
@@ -455,20 +475,29 @@ function renderCart(){
 }
 const NEW_MOCK = new Set(['오이','방울토마토']); // 임시(그림용). 실제로는 전주 대비 신규 등장으로 계산.
 let priceQuery='';
+function asofLabel(){
+  let mx=''; curItems().forEach(i=>{ if(i.asof && i.asof>mx) mx=i.asof; });
+  const s = mx || (DATA.updated||'').replace(/-/g,'');
+  if(!s || s.length<8) return DATA.updated||'';
+  const y=+s.slice(0,4), m=+s.slice(4,6), d=+s.slice(6,8);
+  const w=['일','월','화','수','목','금','토'][new Date(y,m-1,d).getDay()];
+  return `${m}월 ${d}일 (${w})`;
+}
 function priceRow(it){
+  const e=esc(it.name), fav=isFav(it.name);
   const season=SEASON.includes(it.name)?'<span class="tag season">제철</span>':'';
   const nw=NEW_MOCK.has(it.name)?'<span class="tag new">new!</span>':'';
   return `<div class="row">
-      <div class="nm"><span class="t">${it.name}</span>${season}${nw}</div>
+      <div class="nm"><span class="t">${it.name}</span>${season}${nw}<span class="star ${fav?'on':''}" onclick="toggleFav('${e}')">${fav?'★':'☆'}</span></div>
       <div class="price">${priceText(it)}${badge(it)}</div>
-      <div class="plus" onclick="addByName('${esc(it.name)}',true)">＋담기</div>
+      <div class="plus" onclick="addByName('${e}',true)">＋담기</div>
     </div>`;
 }
 function priceSection(title, arr){
   return arr.length ? `<div class="secttl">${title}</div><div class="card">${arr.map(priceRow).join('')}</div>` : '';
 }
 function noticeHTML(){
-  const up=DATA.items.filter(i=>i.pct!=null).sort((a,b)=>b.pct-a.pct)[0]; let h='';
+  const up=curItems().filter(i=>i.pct!=null).sort((a,b)=>b.pct-a.pct)[0]; let h='';
   if(up&&up.pct>=20) h+=`<div class="notice">⚠️ <b>${up.name}</b> 값이 지난주보다 <b>${up.pct}% ↑</b>. 이번 주는 줄이거나 대체 추천.</div>`;
   h+=`<div class="notice">🥚 <b>계란 수급 주의</b> — 조류독감(AI) 영향으로 값이 들쭉날쭉할 수 있어요.</div>`;
   return h;
@@ -476,21 +505,22 @@ function noticeHTML(){
 function renderPriceTab(){
   const body=document.getElementById('priceBody'); if(!body) return;
   if(!region.hasData){ body.innerHTML=`<div class="banner">📍 <b>${region.name}</b> 시세는 준비 중이에요. 장바구니는 그대로 쓸 수 있어요.</div>`; return; }
+  const hdr = `<div class="asof">📅 ${asofLabel()} 조사 기준 · 매일 갱신</div>`;
   const q=(priceQuery||'').trim();
   if(q){
-    const res=DATA.items.filter(i=>i.price!=null && i.name.includes(q));
-    body.innerHTML = res.length ? priceSection(`검색 결과 "${q}"`, res) : `<div class="empty">'${q}' 시세가 없어요.</div>`;
+    const res=curItems().filter(i=>i.price!=null && i.name.includes(q));
+    body.innerHTML = hdr + (res.length ? priceSection(`검색 결과 "${q}"`, res) : `<div class="empty">'${q}' 시세가 없어요.</div>`);
     return;
   }
-  const priced=DATA.items.filter(i=>i.price!=null);
+  const priced=curItems().filter(i=>i.price!=null);
   const favs=priced.filter(i=>store.favorites.includes(i.name));
   const news=priced.filter(i=>NEW_MOCK.has(i.name));
   const vol=priced.filter(i=>i.pct!=null).slice().sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct)).slice(0,6);
-  body.innerHTML = noticeHTML()
+  body.innerHTML = hdr + noticeHTML()
     + priceSection('⭐ 즐겨찾기 시세', favs)
     + priceSection('🆕 이번 주 새로 나온 것', news)
     + priceSection('📈 변동이 큰 품목', vol)
-    + priceSection('전체 품목', priced);
+    + `<div class="secttl" style="margin-top:24px;color:#c0b6c4">더 보고 싶은 품목은 위에서 검색해보세요 🔍</div>`;
 }
 function render(){
   document.querySelectorAll('.regionName').forEach(e=>e.textContent=region.name.split(' ').pop());
