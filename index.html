@@ -144,6 +144,7 @@
   /* 시세 */
   .qlabel{font-size:13px;color:var(--sub);margin:20px 18px 8px;font-weight:700}
   .secttl{font-size:13.5px;color:var(--sub);font-weight:800;margin:22px 18px 8px}
+  .infoi{color:var(--accent);cursor:pointer;font-weight:800;font-size:14px}
   .asof{font-size:12.5px;color:#b0a7b4;font-weight:700;margin:4px 18px 0}
   .quick{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px}
   .qchip{background:#fff;border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:15px;cursor:pointer;white-space:nowrap}
@@ -181,6 +182,10 @@
   .rrow .r-on{color:var(--down);font-weight:800;font-size:15px}
   .rrow .r-soon{color:#bbb;font-size:13px}
   .rrow.sel{font-weight:800}
+  .rgroup{font-size:13px;font-weight:800;color:var(--sub);padding:15px 20px 5px}
+  .rchips{display:flex;flex-wrap:wrap;gap:8px;padding:0 18px 4px}
+  .rchip{background:#f6f3ef;border:1px solid var(--line);border-radius:999px;padding:9px 15px;font-size:15px;cursor:pointer}
+  .rchip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 
   .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--navh) + 18px);background:rgba(28,28,28,.92);color:#fff;padding:11px 18px;border-radius:999px;font-size:14px;font-weight:600;z-index:30;opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.show{opacity:1}
@@ -245,8 +250,20 @@
       <p><b>▲▼ 등락</b> · 가장 최근 조사일 값을 <b>약 1주일 전</b> 값과 비교해요. 차이가 <b>±12%</b>를 넘으면 ▲비쌈 / ▼쌈, 그 안이면 "비슷".</p>
       <p><b>가격 기준</b> · 선택한 지역의 시장 조사값을 우선 표시하고, 없으면 전국 소매평균을 써요.</p>
       <p><b>갱신 / 날짜</b> · 매일 아침 자동으로 최신 시세를 받아와요. 단, KAMIS는 <b>평일만 조사</b>해서 표시값은 항상 <b>가장 최근 조사일 기준</b>이에요(주말·공휴일엔 직전 평일 값, 새벽엔 전날 값일 수 있음). 화면 맨 위 "○월 ○일 조사 기준"이 바로 그 날짜예요.</p>
+      <p><b>📈 변동 큰 품목</b> · 지난주 대비 오르내림(±%)이 가장 큰 순서예요.</p>
       <p><b>주의</b> · 실제 좌판·흥정·등급에 따라 달라요. 정확한 영수증이 아니라 "지금 싼가/비싼가" 신호예요.</p>
       <p style="color:#b3aab5">로그인·서버 없이 이 브라우저에만 저장돼요.</p>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="newsheet">
+  <div class="dim" onclick="closeNew()"></div>
+  <div class="panel"><div class="grip"></div>
+    <h3 style="margin:8px 20px 4px">🆕 "새로 나온 것"이란?</h3>
+    <div class="mcard" style="box-shadow:none;border:0;margin:6px 12px 0">
+      <p>지난주 조사엔 없다가 <b>이번 주에 새로 시세가 잡힌 품목</b>이에요. 제철이 시작됐다는 신호로 볼 수 있어요.</p>
+      <p><b>주의</b> · 이건 어디까지나 <b>KAMIS 조사 데이터 기준</b>이라, 실제 시장 상황과는 다를 수 있어요. "데이터상 이번 주에 새로 등장했다"는 신호일 뿐이에요.</p>
     </div>
   </div>
 </div>
@@ -421,14 +438,22 @@ function openSheet(){ renderRlist(); document.getElementById('sheet').classList.
 function closeSheet(){ document.getElementById('sheet').classList.remove('open'); }
 function openCalc(){ document.getElementById('calcsheet').classList.add('open'); }
 function closeCalc(){ document.getElementById('calcsheet').classList.remove('open'); }
+function openNew(){ document.getElementById('newsheet').classList.add('open'); }
+function closeNew(){ document.getElementById('newsheet').classList.remove('open'); }
 document.querySelectorAll('.regionBtn').forEach(b=>b.addEventListener('click',openSheet));
 function pickRegion(code){ region=REGIONS.find(r=>r.code===code); localStorage.setItem(RKEY,code); closeSheet(); render(); }
+const METRO={'11':'서울','21':'부산','22':'대구','23':'인천','24':'광주','25':'대전','26':'울산','27':'세종','31':'경기','32':'강원','33':'충북','34':'충남','35':'전북','36':'전남','37':'경북','38':'경남','39':'제주','99':'온라인','10':'전국'};
+function metroOf(code){ return METRO[String(code).slice(0,2)]||'기타'; }
 function renderRlist(){
-  document.getElementById('rlist').innerHTML = REGIONS.map(r=>`
-    <div class="rrow ${r.code===region.code?'sel':''}" onclick="pickRegion('${r.code}')">
-      <span>${r.name}</span>
-      ${r.hasData? '<span class="r-on">시세 있음'+(r.code===region.code?' ✓':'')+'</span>' : '<span class="r-soon">준비 중</span>'}
-    </div>`).join('');
+  const groups={}, order=['서울','부산','대구','인천','광주','대전','울산','세종','경기','강원','충북','충남','전북','전남','경북','경남','제주','전국','온라인','기타'];
+  REGIONS.forEach(r=>{ const m=metroOf(r.code); (groups[m]=groups[m]||[]).push(r); });
+  let html='';
+  order.forEach(m=>{ const arr=groups[m]; if(!arr) return;
+    html += `<div class="rgroup">${m}</div><div class="rchips">`
+      + arr.map(r=>`<span class="rchip ${r.code===region.code?'on':''}" onclick="pickRegion('${r.code}')">${r.name}</span>`).join('')
+      + `</div>`;
+  });
+  document.getElementById('rlist').innerHTML = html || '<div class="empty">지역 데이터가 아직 없어요.</div>';
 }
 
 function renderDateBar(){
@@ -493,12 +518,13 @@ function priceRow(it){
       <div class="plus" onclick="addByName('${e}',true)">＋담기</div>
     </div>`;
 }
-function priceSection(title, arr){
-  return arr.length ? `<div class="secttl">${title}</div><div class="card">${arr.map(priceRow).join('')}</div>` : '';
+function priceSection(title, arr, info){
+  const ic = info ? ` <span class="infoi" onclick="${info}">ⓘ</span>` : '';
+  return arr.length ? `<div class="secttl">${title}${ic}</div><div class="card">${arr.map(priceRow).join('')}</div>` : '';
 }
 function noticeHTML(){
   const up=curItems().filter(i=>i.pct!=null).sort((a,b)=>b.pct-a.pct)[0]; let h='';
-  if(up&&up.pct>=20) h+=`<div class="notice">⚠️ <b>${up.name}</b> 값이 지난주보다 <b>${up.pct}% ↑</b>. 이번 주는 줄이거나 대체 추천.</div>`;
+  if(up&&up.pct>=20) h+=`<div class="notice">⚠️ <b>${up.name}</b> 값이 지난주보다 <b>${up.pct}% ↑</b> 올랐어요.</div>`;
   h+=`<div class="notice">🥚 <b>계란 수급 주의</b> — 조류독감(AI) 영향으로 값이 들쭉날쭉할 수 있어요.</div>`;
   return h;
 }
@@ -518,7 +544,7 @@ function renderPriceTab(){
   const vol=priced.filter(i=>i.pct!=null).slice().sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct)).slice(0,6);
   body.innerHTML = hdr + noticeHTML()
     + priceSection('⭐ 즐겨찾기 시세', favs)
-    + priceSection('🆕 이번 주 새로 나온 것', news)
+    + priceSection('🆕 이번 주 새로 나온 것', news, 'openNew()')
     + priceSection('📈 변동이 큰 품목', vol)
     + `<div class="secttl" style="margin-top:24px;color:#c0b6c4">더 보고 싶은 품목은 위에서 검색해보세요 🔍</div>`;
 }
