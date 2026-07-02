@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>짱바구니</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#ec7aa4">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="짱바구니">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+  :root{
+    --bg:#ffffff; --card:#fff; --line:#f0edf0; --ink:#241f28; --sub:#9a929c;
+    --up:#e4572e; --down:#2e8b57; --flat:#b6adb8; --mkt:#2e8b57; --mart:#3a6ea5;
+    --accent:#ec7aa4; --accent-soft:#fdeef4;
+    --navh:64px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0}
+  body{font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;background:var(--bg);color:var(--ink);font-size:16px;}
+  .wrap{max-width:520px;margin:0 auto;padding:0 0 calc(var(--navh) + 30px);}
+
+  .top{position:sticky;top:0;z-index:5;background:var(--bg);padding:16px 18px 8px;display:flex;align-items:center;justify-content:space-between;}
+  .region{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:9px 15px;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .region .pin{font-size:15px}
+  .region .arw{color:#bbb;font-size:13px;margin-left:1px}
+  .top .date{color:var(--sub);font-size:13px;text-align:right;line-height:1.35}
+
+  h1{font-size:25px;font-weight:800;margin:8px 18px 12px;letter-spacing:-.5px}
+
+  .screen{display:none}
+  .screen.on{display:block}
+
+  /* 리스트 탭 */
+  .tabs{display:flex;gap:8px;overflow-x:auto;padding:4px 16px 0;-webkit-overflow-scrolling:touch}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{flex:0 0 auto;background:#fff;border:1px solid var(--line);border-radius:999px;padding:9px 15px;font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap;color:#6b6b6b}
+  .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .tab .cnt{margin-left:6px;font-size:13px;opacity:.65}
+  .tab.add{color:#9a9a9a;font-weight:800}
+  .listctl{padding:9px 20px 0;font-size:12.5px;color:#b6b6b6;display:flex;gap:14px}
+  .listctl span{cursor:pointer}
+
+  /* 날짜 바 + 캘린더 */
+  .datebar{display:flex;align-items:center;justify-content:center;gap:10px;padding:18px 16px 2px}
+  .datepill{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:10px 18px;font-size:16px;font-weight:800;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .datenav{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:18px;color:#999;cursor:pointer;flex:0 0 auto}
+  .calhead{display:flex;align-items:center;justify-content:space-between;padding:2px 18px 8px}
+  .calhead h3{margin:0;font-size:18px}
+  .calhead button{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:19px;color:#666;cursor:pointer}
+  .caldow-row{display:grid;grid-template-columns:repeat(7,1fr);padding:2px 12px 4px}
+  .caldow-row span{text-align:center;font-size:12px;color:#b3aab5;font-weight:700}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:46px;gap:4px;padding:0 12px}
+  .calcell{display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:15px;border-radius:11px;cursor:pointer;color:#3a343e}
+  .calcell.empty{visibility:hidden;cursor:default}
+  .calcell.has{font-weight:800}
+  .calcell .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);margin-top:3px}
+  .calcell.today{border:1.5px solid var(--accent)}
+  .calcell.cur{background:var(--accent);color:#fff}
+  .calcell.cur .dot{background:#fff}
+  .caltoday{text-align:center;padding:16px 0 4px}
+  .caltoday button{background:var(--accent-soft);color:#c14d7e;border:1px solid #f6d3e2;border-radius:999px;padding:10px 20px;font-size:14px;font-weight:800;cursor:pointer}
+
+  /* 입력 */
+  .addbar{display:flex;gap:9px;margin:12px 16px 4px}
+  .addbar input{flex:1;font-size:17px;border:2px solid var(--line);border-radius:14px;padding:14px 16px;background:#fff;outline:none;transition:border-color .15s}
+  .addbar input:focus{border-color:var(--accent)}
+  .addbar button{font-size:17px;font-weight:700;border:0;border-radius:14px;padding:0 20px;background:var(--accent);color:#fff;cursor:pointer}
+  .searchrow{display:flex;gap:8px;align-items:center;margin:12px 16px 4px}
+  .searchrow .region{flex:0 0 auto}
+  .searchrow input{flex:1;min-width:0;font-size:16px;border:2px solid var(--line);border-radius:14px;padding:13px 15px;background:#fff;outline:none}
+  .searchrow input:focus{border-color:var(--accent)}
+
+  .count{margin:14px 18px 6px;font-size:12.5px;color:#a8a8a8;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .gtoggle{color:var(--accent);font-weight:800;cursor:pointer;font-size:13px}
+  .freq{display:flex;gap:7px;flex-wrap:wrap;padding:6px 16px 0}
+  .freqlabel{width:100%;font-size:12px;color:var(--sub);font-weight:700;margin-bottom:2px}
+  .fchip{display:inline-flex;align-items:center;gap:6px;background:var(--accent-soft);border:1px solid #f6d3e2;color:#c14d7e;border-radius:999px;padding:7px 11px 7px 13px;font-size:13.5px;font-weight:700}
+  .fchip .ftxt{cursor:pointer}
+  .fchip .fpin{cursor:pointer;color:#cbb9c6;font-size:14px;font-weight:800}
+  .fchip.fav{background:#fff6df;border-color:#f2dfa2;color:#b07d13}
+  .fchip.fav .fx{cursor:pointer;color:#cba43f;font-size:15px;font-weight:800}
+
+  /* 장보기 체크리스트 (얇게) */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin:0 16px;box-shadow:0 1px 4px rgba(0,0,0,.03)}
+  .row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid #f2f1ed}
+  .row:last-child{border-bottom:0}
+  .ck{width:23px;height:23px;border-radius:7px;border:2px solid #d5d5d5;flex:0 0 auto;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;transition:all .12s}
+  .ck.on{background:var(--accent);border-color:var(--accent)}
+  .nm{flex:1;min-width:0;display:flex;align-items:center;gap:7px;flex-wrap:wrap;cursor:pointer}
+  .nm .t{font-size:16.5px;font-weight:600;line-height:1.25}
+  .star{font-size:16px;cursor:pointer;color:#dbd0dc;line-height:1;padding:0 2px}
+  .star.on{color:#f4b400}
+  .tag{font-size:11px;padding:2px 8px;border-radius:999px;line-height:1.5;font-weight:600}
+  .tag.mkt{background:#e6f4ec;color:var(--mkt)}
+  .tag.mart{background:#e9f0f8;color:var(--mart)}
+  .tag.season{background:#fff1de;color:#c47a1a}
+  .tag.new{background:#fdecec;color:#e4572e;font-weight:800}
+  .row.done .t{text-decoration:line-through;color:#c2c2c2}
+  .row.done .tag{opacity:.4}
+  .price{text-align:right;flex:0 0 76px;white-space:nowrap}
+  .price .p{font-size:14px;font-weight:800;white-space:nowrap}
+  .price .p .u{font-size:10.5px;color:#b3b3b3;font-weight:500}
+  .price .b{font-size:11px;margin-top:1px;font-weight:700}
+  .b.up{color:var(--up)} .b.down{color:var(--down)} .b.flat{color:var(--flat)}
+  .del{color:#d5d5d5;font-size:21px;cursor:pointer;padding:0 2px;line-height:1;flex:0 0 auto}
+  .plus{border:1.5px solid var(--accent);color:var(--accent);background:#fff;border-radius:10px;font-size:13px;font-weight:800;padding:7px 11px;cursor:pointer;flex:0 0 auto}
+  .tiprow{font-size:13px;color:#6a6a6a;background:#fafaf7;padding:10px 14px;border-bottom:1px solid #f2f1ed;line-height:1.5;display:none}
+  .tiprow.show{display:block}
+  .empty{text-align:center;color:var(--sub);font-size:14.5px;line-height:1.7;padding:46px 24px}
+  .empty .big{font-size:38px;display:block;margin-bottom:10px}
+
+  /* 커다란 장바구니 */
+  .basketWrap{position:relative;margin:42px 16px 0}
+  .handle{position:absolute;top:-30px;left:50%;transform:translateX(-50%);width:138px;height:56px;border:9px solid #f3b9d1;border-bottom:0;border-radius:78px 78px 0 0;z-index:0}
+  .basket{position:relative;z-index:1;background:#fff;border:2px solid #f4c3d8;border-radius:12px 12px 28px 28px;min-height:52vh;padding:24px 15px 24px;box-shadow:0 8px 22px rgba(236,122,164,.12);}
+  .rim{position:absolute;top:-9px;left:6px;right:6px;height:18px;background:#fce0ec;border:2px solid #f7ccdf;border-radius:9px;z-index:2}
+  .blist{position:relative;z-index:1}
+  .brow{display:flex;align-items:center;gap:12px;padding:13px 6px;border-bottom:1px dashed #f5d6e3}
+  .brow:last-child{border-bottom:0}
+  .brow.done .t{text-decoration:line-through;color:#c9b8c2}
+  .brow.done .tag{opacity:.4}
+  .grp{font-size:12px;font-weight:800;color:var(--accent);margin:16px 4px 2px;letter-spacing:.02em}
+  .grp:first-child{margin-top:2px}
+  .qty{display:flex;align-items:center;justify-content:center;flex:0 0 74px;border:1px solid #f2d5e2;border-radius:999px;overflow:hidden;background:#fff}
+  .qty button{border:0;background:#fff;color:var(--accent);width:25px;height:25px;font-size:15px;font-weight:800;cursor:pointer;line-height:1;padding:0}
+  .qty .n{min-width:19px;text-align:center;font-size:13.5px;font-weight:800;color:#7a6b74}
+  .btip{font-size:13px;color:#b58aa1;padding:0 6px 12px 41px;line-height:1.5;display:none}
+  .btip.show{display:block}
+  .bempty{position:absolute;left:0;right:0;top:46%;transform:translateY(-50%);text-align:center;color:#d9a7c1;font-size:15px;line-height:1.7;pointer-events:none}
+  .bempty .big{font-size:44px;display:block;margin-bottom:8px;opacity:.55}
+
+  /* 시세 */
+  .qlabel{font-size:13px;color:var(--sub);margin:20px 18px 8px;font-weight:700}
+  .secttl{font-size:13.5px;color:var(--sub);font-weight:800;margin:22px 18px 8px}
+  .quick{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px}
+  .qchip{background:#fff;border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:15px;cursor:pointer;white-space:nowrap}
+  .qchip .d{color:var(--down);font-weight:800;margin-left:4px}
+  .banner{margin:12px 16px 0;padding:13px 15px;border-radius:14px;background:#eef3f8;border:1px solid #d8e3ef;color:#3a6ea5;font-size:14px;line-height:1.5}
+  .notice{margin:12px 16px 0;padding:13px 15px;border-radius:14px;background:#fff4e8;border:1px solid #f3d9bd;font-size:14px;line-height:1.5}
+  .notice b{color:var(--up)}
+
+  /* 더보기 */
+  .mrow{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:16px;margin:10px 16px 0;padding:16px 18px;font-size:17px;cursor:pointer}
+  .mrow .v{color:var(--sub);font-size:15px}
+  .minfo{margin:14px 20px;color:#8f8792;font-size:13px;line-height:1.7}
+  .mcard{background:#fff;border:1px solid var(--line);border-radius:16px;margin:16px 16px 0;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,.03)}
+  .mcard h4{margin:0 0 12px;font-size:15px;font-weight:800;color:#3a343e}
+  .mcard p{margin:0 0 11px;font-size:13px;color:#8f8792;line-height:1.65}
+  .mcard p:last-child{margin-bottom:0}
+  .mcard b{color:#5f5765}
+  .ptitle{display:flex;align-items:flex-end;justify-content:space-between;padding-right:16px}
+  .infobtn{background:var(--accent-soft);color:#c14d7e;border:1px solid #f6d3e2;border-radius:999px;padding:8px 13px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;margin-bottom:13px}
+
+  /* 하단 네비 */
+  .nav{position:fixed;left:0;right:0;bottom:0;z-index:10;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-top:1px solid #e6e6e6;display:flex;max-width:520px;margin:0 auto;height:var(--navh);padding-bottom:env(safe-area-inset-bottom)}
+  .nav button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;color:#b0b0b0;font-weight:700;cursor:pointer}
+  .nav button .ic{font-size:22px;line-height:1}
+  .nav button.on{color:var(--accent)}
+
+  .sheet{position:fixed;inset:0;z-index:20;display:none}
+  .sheet.open{display:block}
+  .sheet .dim{position:absolute;inset:0;background:rgba(0,0,0,.35)}
+  .sheet .panel{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:22px 22px 0 0;max-width:520px;margin:0 auto;padding:10px 0 24px;max-height:72vh;overflow:auto}
+  .sheet .grip{width:40px;height:5px;border-radius:3px;background:#e0e0e0;margin:8px auto 6px}
+  .sheet h3{margin:8px 20px 4px;font-size:18px}
+  .rrow{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;font-size:18px;cursor:pointer;border-bottom:1px solid #f2f2f2}
+  .rrow:last-child{border-bottom:0}
+  .rrow .r-on{color:var(--down);font-weight:800;font-size:15px}
+  .rrow .r-soon{color:#bbb;font-size:13px}
+  .rrow.sel{font-weight:800}
+
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--navh) + 18px);background:rgba(28,28,28,.92);color:#fff;padding:11px 18px;border-radius:999px;font-size:14px;font-weight:600;z-index:30;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+  footer{margin:20px 18px 0;color:#bcbcbc;font-size:11.5px;text-align:center;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ══ 장바구니 ══ -->
+  <div class="screen on" id="scr-cart">
+    <div class="datebar" id="datebar"></div>
+    <div class="addbar">
+      <input id="box" type="text" placeholder="뭐 사지?" autocomplete="off" enterkeyhint="done">
+    </div>
+    <div class="freq" id="freq"></div>
+    <div class="count" id="count"></div>
+    <div id="cart"></div>
+  </div>
+
+  <!-- ══ 시세 ══ -->
+  <div class="screen" id="scr-price">
+    <div class="ptitle"><h1 style="margin-top:20px">시장 소식</h1><button class="infobtn" onclick="openCalc()">계산 기준 ⓘ</button></div>
+    <div class="searchrow">
+      <div class="region regionBtn"><span class="pin">📍</span><span class="regionName">강동구</span><span class="arw">▾</span></div>
+      <input id="priceSearch" type="text" placeholder="품목 검색" autocomplete="off">
+    </div>
+    <div id="priceBody"></div>
+  </div>
+
+  <!-- ══ 기록 ══ -->
+  <div class="screen" id="scr-record">
+    <h1 style="margin-top:20px">기록</h1>
+    <div class="calhead"><button onclick="calMove(-1)">‹</button><h3 id="calTitle"></h3><button onclick="calMove(1)">›</button></div>
+    <div class="caldow-row"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+    <div class="calgrid" id="calGrid"></div>
+    <div id="recDetail"></div>
+  </div>
+
+</div>
+
+<div class="nav">
+  <button data-scr="price" onclick="go('price')"><span class="ic">🏷️</span>시장 소식</button>
+  <button class="on" data-scr="cart" onclick="go('cart')"><span class="ic">🛒</span>장바구니</button>
+  <button data-scr="record" onclick="go('record')"><span class="ic">📅</span>기록</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="sheet" id="sheet">
+  <div class="dim" onclick="closeSheet()"></div>
+  <div class="panel"><div class="grip"></div><h3>지역 선택</h3><div id="rlist"></div></div>
+</div>
+
+<div class="sheet" id="calcsheet">
+  <div class="dim" onclick="closeCalc()"></div>
+  <div class="panel"><div class="grip"></div>
+    <h3 style="margin:8px 20px 4px">시세는 어떻게 계산하나요?</h3>
+    <div class="mcard" style="box-shadow:none;border:0;margin:6px 12px 0">
+      <p><b>출처</b> · KAMIS(농산물유통정보) 일별 소매가격, 상품(上) 등급 기준. 공공데이터포털에 공개된 데이터예요.</p>
+      <p><b>▲▼ 등락</b> · 이번 주 값을 <b>지난주</b> 값과 비교해요. (이번주 − 지난주) ÷ 지난주 × 100 이 <b>±12%</b>를 넘으면 ▲비쌈 / ▼쌈, 그 안이면 "비슷".</p>
+      <p><b>가격 기준</b> · 선택한 지역의 시장 조사값을 우선 표시하고, 없으면 전국 소매평균을 써요.</p>
+      <p><b>주의</b> · 실제 좌판·흥정·등급에 따라 달라요. 정확한 영수증이 아니라 "지금 싼가/비싼가" 신호예요.</p>
+      <p style="color:#b3aab5">로그인·서버 없이 이 브라우저에만 저장돼요.</p>
+    </div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+const DATA = window.PRICE_DATA || {items:[]};
+
+const REGIONS = [
+  {code:'11740', name:'서울 강동구', hasData:true},
+  {code:'11110', name:'서울 종로구', hasData:false},
+  {code:'11680', name:'서울 강남구', hasData:false},
+  {code:'26440', name:'부산 강서구', hasData:false},
+  {code:'27110', name:'대구 중구',   hasData:false},
+  {code:'28110', name:'인천 중구',   hasData:false},
+  {code:'29110', name:'광주 동구',   hasData:false},
+  {code:'30110', name:'대전 동구',   hasData:false},
+];
+const RKEY='region_v1';
+let region = REGIONS.find(r=>r.code===localStorage.getItem(RKEY)) || REGIONS.find(r=>r.hasData);
+
+const SEASON = ["오이","호박","감자","방울토마토","열무","가지","옥수수"];
+const STORE = {
+  양파:"망에 담아 통풍 잘 되는 그늘. 깐 건 밀폐 후 냉장.",
+  대파:"신문지에 싸서 세워 냉장. 송송 썰어 냉동도 굿.",
+  배추:"신문지에 싸 냉장. 자른 건 단면 랩.",
+  무:"잎 떼고 신문지 싸서 냉장.", 상추:"물기 닦고 키친타월+밀폐용기 냉장.",
+  시금치:"데쳐서 소분 냉동하면 오래감.", 오이:"물기 없이 랩핑 후 냉장(냉해 주의).",
+  호박:"통째 실온, 자른 건 씨 빼고 랩 냉장.", 당근:"흙 묻은 채 신문지 싸 냉장.",
+  감자:"빛 차단·서늘하게. 사과 한 알 넣으면 싹 덜 남.", 깻잎:"줄기에 물 적신 티슈, 밀폐 냉장.",
+  부추:"씻지 말고 키친타월 감싸 냉장.", 양상추:"심지에 젖은 티슈, 통째 밀폐 냉장.",
+  콩나물:"물에 담가 밀폐 냉장, 2~3일 내.", 방울토마토:"꼭지 떼고 씻지 말고 냉장."
+};
+
+function findItem(name){ if(!region.hasData) return null;
+  const t=name.replace(/\s/g,''); return DATA.items.find(i=> t.includes(i.name)) || null; }
+function badge(it){
+  if(!it || it.price==null||it.pct==null) return '';
+  if(it.pct>=12) return `<div class="b up">▲ ${it.pct}%</div>`;
+  if(it.pct<=-12) return `<div class="b down">▼ ${Math.abs(it.pct)}%</div>`;
+  return `<div class="b flat">비슷</div>`;
+}
+function priceText(it){ if(!it) return '';
+  const p=it.bokjori ?? it.price; if(p==null) return '';
+  return `<div class="p">${p.toLocaleString()}<span class="u">원/${it.unit||''}</span></div>`; }
+function channelTag(it){
+  if(!it || it.bokjori==null || it.price==null || it.price===0) return '';
+  const diff=(it.bokjori-it.price)/it.price*100;
+  if(diff<=-8) return `<span class="tag mkt">🏪 시장</span>`;
+  if(diff>=8)  return `<span class="tag mart">🛒 마트</span>`;
+  return '';
+}
+
+function fmt(dt){ return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; }
+function todayStr(){ return fmt(new Date()); }
+const KEY='cart_v4';
+let store = JSON.parse(localStorage.getItem(KEY)||'null');
+if(!store){
+  // 이전 버전(이름 리스트) → 날짜 바구니로 이관
+  const v3=JSON.parse(localStorage.getItem('cart_v3')||'null');
+  let items=[];
+  if(v3 && v3.lists){ v3.lists.forEach(l=>l.items.forEach(it=>{ if(!items.find(x=>x.name===it.name)) items.push(it); })); }
+  else { items=JSON.parse(localStorage.getItem('cart_v2')||'[]'); }
+  store={ cur:todayStr(), baskets:{[todayStr()]:{items}},
+    history:(v3&&v3.history)||{}, favorites:(v3&&v3.favorites)||[], groupBy:(v3&&v3.groupBy)||false };
+}
+store.history=store.history||{}; store.favorites=store.favorites||[];
+if(store.groupBy===undefined) store.groupBy=false;
+store.baskets=store.baskets||{}; store.cur=store.cur||todayStr();
+if(!store.baskets[store.cur]) store.baskets[store.cur]={items:[]};
+Object.values(store.baskets).forEach(b=>b.items.forEach(it=>{ if(it.qty==null) it.qty=1; }));
+function save(){ localStorage.setItem(KEY, JSON.stringify(store)); }
+function active(){ if(!store.baskets[store.cur]) store.baskets[store.cur]={items:[]}; return store.baskets[store.cur]; }
+
+let toastT;
+function toast(msg){ const t=document.getElementById('toast'); t.style.pointerEvents='none'; t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1400); }
+function toastUndo(msg){ const t=document.getElementById('toast'); t.style.pointerEvents='auto';
+  t.innerHTML=`${msg} <span style="color:#ffcfe0;font-weight:800;margin-left:10px;cursor:pointer" onclick="undoDel()">되돌리기</span>`;
+  t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),3400); }
+
+function addByName(n,quiet){ n=(n||'').trim(); if(!n) return;
+  const L=active(); const ex=L.items.find(c=>c.name===n);
+  if(ex){ ex.qty=(ex.qty||1)+1; } else { L.items.unshift({name:n,done:false,qty:1}); }
+  store.history[n]=(store.history[n]||0)+1;
+  if(quiet) toast(`${n} 담음`);
+  save(); render(); }
+function addFromBox(){ const b=document.getElementById('box'); addByName(b.value); b.value=''; b.focus(); }
+function toggle(i){ active().items[i].done=!active().items[i].done; save(); render(); }
+let lastDel=null;
+function del(i){ const arr=active().items; lastDel={item:arr[i], date:store.cur, index:i}; arr.splice(i,1); save(); render(); toastUndo(`${lastDel.item.name} 삭제`); }
+function undoDel(){ if(!lastDel) return; const b=store.baskets[lastDel.date]||(store.baskets[lastDel.date]={items:[]});
+  b.items.splice(Math.min(lastDel.index,b.items.length),0,lastDel.item); lastDel=null; save();
+  document.getElementById('toast').classList.remove('show'); render(); }
+function editItem(i){ const arr=active().items; const n=prompt('품목 이름 수정', arr[i].name); if(n!==null && n.trim()){ arr[i].name=n.trim(); save(); render(); } }
+function incQty(i){ const it=active().items[i]; it.qty=(it.qty||1)+1; save(); render(); }
+function decQty(i){ const it=active().items[i]; it.qty=(it.qty||1)-1; if(it.qty<1) it.qty=1; save(); render(); }
+function toggleGroup(){ store.groupBy=!store.groupBy; save(); render(); }
+function esc(s){ return String(s).replace(/'/g,"\\'"); }
+function isFav(n){ return store.favorites.includes(n); }
+function addFav(n){ if(!store.favorites.includes(n)){ store.favorites.push(n); toast(n+' 즐겨찾기'); } save(); render(); }
+function unfav(n){ store.favorites=store.favorites.filter(x=>x!==n); save(); render(); }
+function toggleFav(n){ isFav(n)?unfav(n):addFav(n); }
+function clearDone(){ const L=active(); L.items=L.items.filter(c=>!c.done); save(); render(); toast('완료 항목 비웠어요'); }
+function flipTip(id){ const e=document.getElementById(id); if(e) e.classList.toggle('show'); }
+
+// 한글 IME: 조합 중 엔터는 무시 (상추→"상추"+"추" 중복 방지)
+const boxEl=document.getElementById('box');
+boxEl.addEventListener('keydown',e=>{ if(e.key==='Enter' && !e.isComposing && e.keyCode!==229){ e.preventDefault(); addFromBox(); } });
+const psEl=document.getElementById('priceSearch');
+if(psEl) psEl.addEventListener('input',e=>{ priceQuery=e.target.value; renderPriceTab(); });
+
+function setDate(d){ store.cur=d; save(); render(); }
+function shiftDate(delta){ const dt=new Date(store.cur); dt.setDate(dt.getDate()+delta); setDate(fmt(dt)); }
+function friendlyDate(ds){
+  if(ds===todayStr()) return '오늘';
+  const y=new Date(); y.setDate(y.getDate()-1); if(ds===fmt(y)) return '어제';
+  const t=new Date(); t.setDate(t.getDate()+1); if(ds===fmt(t)) return '내일';
+  const dt=new Date(ds); const w=['일','월','화','수','목','금','토'][dt.getDay()];
+  return `${dt.getMonth()+1}월 ${dt.getDate()}일 (${w})`;
+}
+// 캘린더
+let calView=new Date();
+function calMove(m){ calView.setMonth(calView.getMonth()+m); renderCal(); }
+function calPick(d){ setDate(d); go('cart'); }
+let recSel=null;
+function renderRecord(){ recSel=store.cur; calView=new Date(recSel); renderCal(); renderRecDetail(); }
+function calSelect(d){ recSel=d; calView=new Date(d); renderCal(); renderRecDetail(); }
+function renderRecDetail(){
+  const el=document.getElementById('recDetail'); if(!el) return;
+  const b=store.baskets[recSel], title=friendlyDate(recSel)+' 장바구니';
+  if(!b || !b.items.length){ el.innerHTML=`<div class="secttl">${title}</div><div class="empty">이 날은 담은 게 없어요.</div>`; return; }
+  el.innerHTML=`<div class="secttl">${title} · ${b.items.length}개</div><div class="card">` + b.items.map(c=>{
+    const st=c.done?'<span class="tag" style="background:#e6f4ec;color:#2e8b57">샀음</span>':'<span class="tag" style="background:#f4eef1;color:#b58aa1">안 샀음</span>';
+    const q=(c.qty||1)>1?`<span class="tag" style="background:#f1f1ee;color:#888">×${c.qty}</span>`:'';
+    return `<div class="row"><div class="nm"><span class="t">${c.name}</span>${q}</div><div class="price" style="flex:0 0 auto">${st}</div></div>`;
+  }).join('')+`</div>`;
+}
+function renderCal(){
+  const y=calView.getFullYear(), m=calView.getMonth();
+  document.getElementById('calTitle').textContent=`${y}년 ${m+1}월`;
+  const first=new Date(y,m,1).getDay(), days=new Date(y,m+1,0).getDate();
+  let html='';
+  for(let i=0;i<first;i++) html+=`<div class="calcell empty"></div>`;
+  for(let d=1;d<=days;d++){
+    const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const b=store.baskets[ds], has=b&&b.items.length>0, cls=['calcell'];
+    if(has) cls.push('has'); if(ds===todayStr()) cls.push('today'); if(ds===recSel) cls.push('cur');
+    html+=`<div class="${cls.join(' ')}" onclick="calSelect('${ds}')">${d}${has?'<span class="dot"></span>':''}</div>`;
+  }
+  document.getElementById('calGrid').innerHTML=html;
+}
+
+let screen='cart';
+function go(s){ screen=s;
+  document.querySelectorAll('.screen').forEach(e=>e.classList.toggle('on', e.id==='scr-'+s));
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.scr===s));
+  window.scrollTo(0,0); render();
+}
+
+function openSheet(){ renderRlist(); document.getElementById('sheet').classList.add('open'); }
+function closeSheet(){ document.getElementById('sheet').classList.remove('open'); }
+function openCalc(){ document.getElementById('calcsheet').classList.add('open'); }
+function closeCalc(){ document.getElementById('calcsheet').classList.remove('open'); }
+document.querySelectorAll('.regionBtn').forEach(b=>b.addEventListener('click',openSheet));
+function pickRegion(code){ region=REGIONS.find(r=>r.code===code); localStorage.setItem(RKEY,code); closeSheet(); render(); }
+function renderRlist(){
+  document.getElementById('rlist').innerHTML = REGIONS.map(r=>`
+    <div class="rrow ${r.code===region.code?'sel':''}" onclick="pickRegion('${r.code}')">
+      <span>${r.name}</span>
+      ${r.hasData? '<span class="r-on">시세 있음'+(r.code===region.code?' ✓':'')+'</span>' : '<span class="r-soon">준비 중</span>'}
+    </div>`).join('');
+}
+
+function renderDateBar(){
+  const el=document.getElementById('datebar'); if(!el) return;
+  el.innerHTML = `<button class="datenav" onclick="shiftDate(-1)">‹</button>
+    <div class="datepill" onclick="go('record')"><span>📅</span>${friendlyDate(store.cur)}</div>
+    <button class="datenav" onclick="shiftDate(1)">›</button>`;
+}
+function rowHTML(c,i){
+  const it=findItem(c.name);
+  const tags=[it&&SEASON.includes(it.name)?'<span class="tag season">제철</span>':''].filter(Boolean).join('');
+  const q=c.qty||1, en=esc(c.name), fav=isFav(c.name);
+  return `<div class="brow ${c.done?'done':''}">
+      <div class="ck ${c.done?'on':''}" onclick="toggle(${i})">${c.done?'✓':''}</div>
+      <div class="nm" onclick="editItem(${i})"><span class="t">${c.name}</span>${tags}<span class="star ${fav?'on':''}" onclick="event.stopPropagation();toggleFav('${en}')">${fav?'★':'☆'}</span></div>
+      <div class="price">${priceText(it)}${badge(it)}</div>
+      <div class="qty"><button onclick="decQty(${i})">−</button><span class="n">${q}</span><button onclick="incQty(${i})">＋</button></div>
+      <div class="del" onclick="del(${i})">×</div>
+    </div>`;
+}
+function renderFreq(){
+  const el=document.getElementById('freq'); if(!el) return;
+  const inList=new Set(active().items.map(c=>c.name));
+  const favs=(store.favorites||[]).filter(n=>!inList.has(n));
+  el.innerHTML = favs.length
+    ? `<div class="freqlabel">⭐ 즐겨찾기</div>` + favs.map(n=>{ const e=esc(n);
+        return `<span class="fchip fav"><span class="ftxt" onclick="addByName('${e}',true)">${n}</span><span class="fx" onclick="event.stopPropagation();unfav('${e}')">×</span></span>`;
+      }).join('')
+    : '';
+}
+function renderCart(){
+  const items=active().items, el=document.getElementById('cart'), cnt=document.getElementById('count');
+  const done=items.filter(c=>c.done).length;
+  cnt.innerHTML = items.length ? `<span>${items.length}개${done?` · ${done}개 담음`:''}</span>${done?`<span class="gtoggle" onclick="clearDone()">완료 비우기</span>`:''}` : '';
+  renderFreq();
+  let inner;
+  if(!items.length){
+    inner=`<div class="bempty"><span class="big">🧺</span>${friendlyDate(store.cur)} 장바구니가 비어 있어요.<br>위에 치고 엔터로 담아보세요.</div>`;
+  } else {
+    const order=[...items.keys()].sort((a,b)=>(items[a].done?1:0)-(items[b].done?1:0));
+    inner=`<div class="blist">${order.map(i=>rowHTML(items[i],i)).join('')}</div>`;
+  }
+  el.innerHTML = `<div class="basketWrap"><div class="handle"></div><div class="basket"><div class="rim"></div>${inner}</div></div>`;
+}
+const NEW_MOCK = new Set(['오이','방울토마토']); // 임시(그림용). 실제로는 전주 대비 신규 등장으로 계산.
+let priceQuery='';
+function priceRow(it){
+  const season=SEASON.includes(it.name)?'<span class="tag season">제철</span>':'';
+  const nw=NEW_MOCK.has(it.name)?'<span class="tag new">new!</span>':'';
+  return `<div class="row">
+      <div class="nm"><span class="t">${it.name}</span>${season}${nw}</div>
+      <div class="price">${priceText(it)}${badge(it)}</div>
+      <div class="plus" onclick="addByName('${esc(it.name)}',true)">＋담기</div>
+    </div>`;
+}
+function priceSection(title, arr){
+  return arr.length ? `<div class="secttl">${title}</div><div class="card">${arr.map(priceRow).join('')}</div>` : '';
+}
+function noticeHTML(){
+  const up=DATA.items.filter(i=>i.pct!=null).sort((a,b)=>b.pct-a.pct)[0]; let h='';
+  if(up&&up.pct>=20) h+=`<div class="notice">⚠️ <b>${up.name}</b> 값이 지난주보다 <b>${up.pct}% ↑</b>. 이번 주는 줄이거나 대체 추천.</div>`;
+  h+=`<div class="notice">🥚 <b>계란 수급 주의</b> — 조류독감(AI) 영향으로 값이 들쭉날쭉할 수 있어요.</div>`;
+  return h;
+}
+function renderPriceTab(){
+  const body=document.getElementById('priceBody'); if(!body) return;
+  if(!region.hasData){ body.innerHTML=`<div class="banner">📍 <b>${region.name}</b> 시세는 준비 중이에요. 장바구니는 그대로 쓸 수 있어요.</div>`; return; }
+  const q=(priceQuery||'').trim();
+  if(q){
+    const res=DATA.items.filter(i=>i.price!=null && i.name.includes(q));
+    body.innerHTML = res.length ? priceSection(`검색 결과 "${q}"`, res) : `<div class="empty">'${q}' 시세가 없어요.</div>`;
+    return;
+  }
+  const priced=DATA.items.filter(i=>i.price!=null);
+  const favs=priced.filter(i=>store.favorites.includes(i.name));
+  const news=priced.filter(i=>NEW_MOCK.has(i.name));
+  const vol=priced.filter(i=>i.pct!=null).slice().sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct)).slice(0,6);
+  body.innerHTML = noticeHTML()
+    + priceSection('⭐ 즐겨찾기 시세', favs)
+    + priceSection('🆕 이번 주 새로 나온 것', news)
+    + priceSection('📈 변동이 큰 품목', vol)
+    + priceSection('전체 품목', priced);
+}
+function render(){
+  document.querySelectorAll('.regionName').forEach(e=>e.textContent=region.name.split(' ').pop());
+  document.querySelectorAll('.dateSlot').forEach(e=>e.innerHTML= region.hasData? `${DATA.updated} 기준` : '&nbsp;');
+  if(screen==='cart'){ renderDateBar(); renderCart(); }
+  else if(screen==='price'){ renderPriceTab(); }
+  else if(screen==='record'){ renderRecord(); }
+}
+render();
+
+// PWA: 서비스워커 등록 (오프라인 + 홈 화면 추가)
+if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
+</script>
+</body>
+</html>
