@@ -257,6 +257,18 @@
   </div>
 </div>
 
+<div class="sheet" id="datesheet">
+  <div class="dim" onclick="closeDateCal()"></div>
+  <div class="panel"><div class="grip"></div>
+    <h3 style="margin:8px 20px 2px">날짜 선택</h3>
+    <p style="margin:0 20px 8px;color:var(--sub);font-size:13px">고른 날짜의 장바구니를 담을 수 있어요</p>
+    <div class="calhead"><button onclick="dcalMove(-1)">‹</button><h3 id="dcalTitle"></h3><button onclick="dcalMove(1)">›</button></div>
+    <div class="caldow-row"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+    <div class="calgrid" id="dcalGrid"></div>
+    <div class="caltoday"><button onclick="dpick(todayStr())">오늘로</button></div>
+  </div>
+</div>
+
 <div class="sheet" id="newsheet">
   <div class="dim" onclick="closeNew()"></div>
   <div class="panel"><div class="grip"></div>
@@ -275,10 +287,26 @@ const DATA = window.PRICE_DATA || {};
 const HAS_REGIONS = Array.isArray(DATA.regions) && !!DATA.byRegion;
 const REGIONS = (HAS_REGIONS ? DATA.regions : [{code:'_', name:(DATA.market||'기본')}])
   .map(r=>({code:r.code, name:r.name, hasData:true}));
-function itemsOf(code){ return HAS_REGIONS ? (DATA.byRegion[code]||[]) : (DATA.items||[]); }
-const RKEY='region_v2';
-let region = REGIONS.find(r=>r.code===localStorage.getItem(RKEY)) || REGIONS[0] || {code:'_',name:'기본',hasData:true};
-function curItems(){ return itemsOf(region.code); }
+const RKEY='region_v2', MKEY='market_v1';
+let _r0 = REGIONS.find(r=>r.code===localStorage.getItem(RKEY)) || REGIONS[0] || {code:'_',name:'기본'};
+let region = {code:_r0.code, name:_r0.name, hasData:true, market:(localStorage.getItem(MKEY)||null)};
+function curItems(){
+  if(HAS_REGIONS){
+    if(region.market && region.market!=='_all' && DATA.byMarket){
+      const k=region.code+'|'+region.market;
+      if(DATA.byMarket[k] && DATA.byMarket[k].length) return DATA.byMarket[k];
+    }
+    return DATA.byRegion[region.code]||[];
+  }
+  return DATA.items||[];
+}
+function marketName(){
+  if(region.market && HAS_REGIONS && DATA.markets && DATA.markets[region.code]){
+    const m=(DATA.markets[region.code]||[]).find(x=>x.key===region.market);
+    if(m) return m.name;
+  }
+  return null;
+}
 
 const SEASON = ["오이","호박","감자","방울토마토","열무","가지","옥수수"];
 const STORE = {
@@ -375,7 +403,7 @@ function isFav(n){ return store.favorites.includes(n); }
 function addFav(n){ if(!store.favorites.includes(n)){ store.favorites.push(n); toast(n+' 즐겨찾기'); } save(); render(); }
 function unfav(n){ store.favorites=store.favorites.filter(x=>x!==n); save(); render(); }
 function toggleFav(n){ isFav(n)?unfav(n):addFav(n); }
-function clearDone(){ const L=active(); L.items=L.items.filter(c=>!c.done); save(); render(); toast('완료 항목 비웠어요'); }
+function clearAll(){ const L=active(); if(!L.items.length) return; if(confirm('장바구니를 다 비울까요?')){ L.items=[]; save(); render(); toast('비웠어요'); } }
 function flipTip(id){ const e=document.getElementById(id); if(e) e.classList.toggle('show'); }
 
 // 한글 IME: 조합 중 엔터는 무시 (상추→"상추"+"추" 중복 방지)
@@ -440,8 +468,40 @@ function openCalc(){ document.getElementById('calcsheet').classList.add('open');
 function closeCalc(){ document.getElementById('calcsheet').classList.remove('open'); }
 function openNew(){ document.getElementById('newsheet').classList.add('open'); }
 function closeNew(){ document.getElementById('newsheet').classList.remove('open'); }
+// 장바구니용 날짜 선택 달력(팝업) — 고른 날짜의 장바구니를 편집
+let dcalView=new Date();
+function openDateCal(){ dcalView=new Date(store.cur); document.getElementById('datesheet').classList.add('open'); renderDateCal(); }
+function closeDateCal(){ document.getElementById('datesheet').classList.remove('open'); }
+function dcalMove(m){ dcalView.setMonth(dcalView.getMonth()+m); renderDateCal(); }
+function dpick(d){ setDate(d); closeDateCal(); }   // setDate가 장바구니 탭 재렌더 → 그 날짜 편집
+function renderDateCal(){
+  const y=dcalView.getFullYear(), m=dcalView.getMonth();
+  document.getElementById('dcalTitle').textContent=`${y}년 ${m+1}월`;
+  const first=new Date(y,m,1).getDay(), days=new Date(y,m+1,0).getDate();
+  let html='';
+  for(let i=0;i<first;i++) html+=`<div class="calcell empty"></div>`;
+  for(let d=1;d<=days;d++){
+    const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const b=store.baskets[ds], has=b&&b.items.length>0, cls=['calcell'];
+    if(has) cls.push('has'); if(ds===todayStr()) cls.push('today'); if(ds===store.cur) cls.push('cur');
+    html+=`<div class="${cls.join(' ')}" onclick="dpick('${ds}')">${d}${has?'<span class="dot"></span>':''}</div>`;
+  }
+  document.getElementById('dcalGrid').innerHTML=html;
+}
 document.querySelectorAll('.regionBtn').forEach(b=>b.addEventListener('click',openSheet));
-function pickRegion(code){ region=REGIONS.find(r=>r.code===code); localStorage.setItem(RKEY,code); closeSheet(); render(); }
+function pickRegion(code){
+  const r=REGIONS.find(x=>x.code===code)||{code,name:code};
+  region={code:r.code, name:r.name, hasData:true, market:null};
+  localStorage.setItem(RKEY,code); localStorage.removeItem(MKEY);
+  const mk = HAS_REGIONS && DATA.markets && DATA.markets[code];
+  if(mk && mk.length>1){ renderRlist(); render(); }   // 시장 있으면 시트 유지, 시장 고르게
+  else { closeSheet(); render(); }
+}
+function pickMarket(key){
+  region.market = (key==='_all'? null : key);
+  if(region.market) localStorage.setItem(MKEY, region.market); else localStorage.removeItem(MKEY);
+  closeSheet(); render();
+}
 const METRO={'11':'서울','21':'부산','22':'대구','23':'인천','24':'광주','25':'대전','26':'울산','27':'세종','31':'경기','32':'강원','33':'충북','34':'충남','35':'전북','36':'전남','37':'경북','38':'경남','39':'제주','99':'온라인','10':'전국'};
 function metroOf(code){ return METRO[String(code).slice(0,2)]||'기타'; }
 function renderRlist(){
@@ -453,13 +513,19 @@ function renderRlist(){
       + arr.map(r=>`<span class="rchip ${r.code===region.code?'on':''}" onclick="pickRegion('${r.code}')">${r.name}</span>`).join('')
       + `</div>`;
   });
+  const mk = HAS_REGIONS && DATA.markets && DATA.markets[region.code];
+  if(mk && mk.length>1){
+    html += `<div class="rgroup" style="color:var(--accent)">🏪 ${region.name} 안에서</div><div class="rchips">`
+      + mk.map(m=>`<span class="rchip ${((m.key==='_all'&&!region.market)||m.key===region.market)?'on':''}" onclick="pickMarket('${m.key}')">${m.name}</span>`).join('')
+      + `</div>`;
+  }
   document.getElementById('rlist').innerHTML = html || '<div class="empty">지역 데이터가 아직 없어요.</div>';
 }
 
 function renderDateBar(){
   const el=document.getElementById('datebar'); if(!el) return;
   el.innerHTML = `<button class="datenav" onclick="shiftDate(-1)">‹</button>
-    <div class="datepill" onclick="go('record')"><span>📅</span>${friendlyDate(store.cur)}</div>
+    <div class="datepill" onclick="openDateCal()"><span>📅</span>${friendlyDate(store.cur)}</div>
     <button class="datenav" onclick="shiftDate(1)">›</button>`;
 }
 function rowHTML(c,i){
@@ -487,7 +553,7 @@ function renderFreq(){
 function renderCart(){
   const items=active().items, el=document.getElementById('cart'), cnt=document.getElementById('count');
   const done=items.filter(c=>c.done).length;
-  cnt.innerHTML = items.length ? `<span>${items.length}개${done?` · ${done}개 담음`:''}</span>${done?`<span class="gtoggle" onclick="clearDone()">완료 비우기</span>`:''}` : '';
+  cnt.innerHTML = items.length ? `<span>${items.length}개${done?` · ${done}개 담음`:''}</span><span class="gtoggle" onclick="clearAll()">비우기</span>` : '';
   renderFreq();
   let inner;
   if(!items.length){
@@ -498,7 +564,6 @@ function renderCart(){
   }
   el.innerHTML = `<div class="basketWrap"><div class="handle"></div><div class="basket"><div class="rim"></div>${inner}</div></div>`;
 }
-const NEW_MOCK = new Set(['오이','방울토마토']); // 임시(그림용). 실제로는 전주 대비 신규 등장으로 계산.
 let priceQuery='';
 function asofLabel(){
   let mx=''; curItems().forEach(i=>{ if(i.asof && i.asof>mx) mx=i.asof; });
@@ -511,7 +576,7 @@ function asofLabel(){
 function priceRow(it){
   const e=esc(it.name), fav=isFav(it.name);
   const season=SEASON.includes(it.name)?'<span class="tag season">제철</span>':'';
-  const nw=NEW_MOCK.has(it.name)?'<span class="tag new">new!</span>':'';
+  const nw=it.isNew?'<span class="tag new">new!</span>':'';
   return `<div class="row">
       <div class="nm"><span class="t">${it.name}</span>${season}${nw}<span class="star ${fav?'on':''}" onclick="toggleFav('${e}')">${fav?'★':'☆'}</span></div>
       <div class="price">${priceText(it)}${badge(it)}</div>
@@ -540,8 +605,8 @@ function renderPriceTab(){
   }
   const priced=curItems().filter(i=>i.price!=null);
   const favs=priced.filter(i=>store.favorites.includes(i.name));
-  const news=priced.filter(i=>NEW_MOCK.has(i.name));
-  const vol=priced.filter(i=>i.pct!=null).slice().sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct)).slice(0,6);
+  const news=priced.filter(i=>i.isNew);
+  const vol=priced.filter(i=>i.pct!=null && Math.abs(i.pct)>=12).sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct)).slice(0,10);
   body.innerHTML = hdr + noticeHTML()
     + priceSection('⭐ 즐겨찾기 시세', favs)
     + priceSection('🆕 이번 주 새로 나온 것', news, 'openNew()')
@@ -549,7 +614,8 @@ function renderPriceTab(){
     + `<div class="secttl" style="margin-top:24px;color:#c0b6c4">더 보고 싶은 품목은 위에서 검색해보세요 🔍</div>`;
 }
 function render(){
-  document.querySelectorAll('.regionName').forEach(e=>e.textContent=region.name.split(' ').pop());
+  const _rn = marketName() || region.name.split(' ').pop();
+  document.querySelectorAll('.regionName').forEach(e=>e.textContent=_rn);
   document.querySelectorAll('.dateSlot').forEach(e=>e.innerHTML= region.hasData? `${DATA.updated} 기준` : '&nbsp;');
   if(screen==='cart'){ renderDateBar(); renderCart(); }
   else if(screen==='price'){ renderPriceTab(); }
