@@ -343,21 +343,34 @@ function channelTag(it){
 function fmt(dt){ return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; }
 function todayStr(){ return fmt(new Date()); }
 const KEY='cart_v4';
-let store = JSON.parse(localStorage.getItem(KEY)||'null');
-if(!store){
-  // 이전 버전(이름 리스트) → 날짜 바구니로 이관
-  const v3=JSON.parse(localStorage.getItem('cart_v3')||'null');
-  let items=[];
-  if(v3 && v3.lists){ v3.lists.forEach(l=>l.items.forEach(it=>{ if(!items.find(x=>x.name===it.name)) items.push(it); })); }
-  else { items=JSON.parse(localStorage.getItem('cart_v2')||'[]'); }
-  store={ cur:todayStr(), baskets:{[todayStr()]:{items}},
-    history:(v3&&v3.history)||{}, favorites:(v3&&v3.favorites)||[], groupBy:(v3&&v3.groupBy)||false };
+// localStorage 값이 깨졌거나 옛 형식이어도 절대 앱이 죽지 않도록 방탄 파싱
+function sjson(k, fb){ try{ const v=JSON.parse(localStorage.getItem(k)); return v==null? fb : v; }catch(e){ return fb; } }
+function isObj(o){ return o && typeof o==='object' && !Array.isArray(o); }
+let store;
+try{
+  store = sjson(KEY, null);
+  if(!isObj(store)){
+    store = null;
+    // 이전 버전(이름 리스트) → 날짜 바구니로 이관
+    const v3 = sjson('cart_v3', null);
+    let items=[];
+    if(isObj(v3) && Array.isArray(v3.lists)){ v3.lists.forEach(l=>{ (l&&Array.isArray(l.items)?l.items:[]).forEach(it=>{ if(it&&it.name&&!items.find(x=>x.name===it.name)) items.push(it); }); }); }
+    else { const v2=sjson('cart_v2', []); if(Array.isArray(v2)) items=v2; }
+    store={ cur:todayStr(), baskets:{[todayStr()]:{items}},
+      history:(isObj(v3)&&v3.history)||{}, favorites:(isObj(v3)&&Array.isArray(v3.favorites)?v3.favorites:[]), groupBy:(isObj(v3)&&v3.groupBy)||false };
+  }
+  // 구조 정규화 — 어떤 필드가 없거나 타입이 틀려도 안전한 기본값으로
+  if(!isObj(store.history)) store.history={};
+  if(!Array.isArray(store.favorites)) store.favorites=[];
+  if(typeof store.groupBy!=='boolean') store.groupBy=false;
+  if(!isObj(store.baskets)) store.baskets={};
+  if(typeof store.cur!=='string' || !store.cur) store.cur=todayStr();
+  Object.keys(store.baskets).forEach(d=>{ let b=store.baskets[d]; if(!isObj(b)||!Array.isArray(b.items)) b={items:[]}; b.items=b.items.filter(isObj); b.items.forEach(it=>{ if(it.qty==null) it.qty=1; }); store.baskets[d]=b; });
+  if(!store.baskets[store.cur]) store.baskets[store.cur]={items:[]};
+}catch(e){
+  // 최후 안전망: 저장값이 어떤 식으로든 못 쓰게 됐으면 깨끗한 새 바구니로 시작
+  store={ cur:todayStr(), baskets:{[todayStr()]:{items:[]}}, history:{}, favorites:[], groupBy:false };
 }
-store.history=store.history||{}; store.favorites=store.favorites||[];
-if(store.groupBy===undefined) store.groupBy=false;
-store.baskets=store.baskets||{}; store.cur=store.cur||todayStr();
-if(!store.baskets[store.cur]) store.baskets[store.cur]={items:[]};
-Object.values(store.baskets).forEach(b=>b.items.forEach(it=>{ if(it.qty==null) it.qty=1; }));
 function save(){ localStorage.setItem(KEY, JSON.stringify(store)); }
 function active(){ if(!store.baskets[store.cur]) store.baskets[store.cur]={items:[]}; return store.baskets[store.cur]; }
 
@@ -489,12 +502,16 @@ function renderDateCal(){
   document.getElementById('dcalGrid').innerHTML=html;
 }
 document.querySelectorAll('.regionBtn').forEach(b=>b.addEventListener('click',openSheet));
+// 시장코드·이름 없는 빈 칩 제거한 실제 시장 목록
+function realMarkets(code){
+  return (HAS_REGIONS && DATA.markets && DATA.markets[code] || [])
+    .filter(m=> m && (m.key==='_all' || m.key==='_mart' || (m.key && m.name)));
+}
 function pickRegion(code){
   const r=REGIONS.find(x=>x.code===code)||{code,name:code};
   region={code:r.code, name:r.name, hasData:true, market:null};
   localStorage.setItem(RKEY,code); localStorage.removeItem(MKEY);
-  const mk = HAS_REGIONS && DATA.markets && DATA.markets[code];
-  if(mk && mk.length>1){ renderRlist(); render(); }   // 시장 있으면 시트 유지, 시장 고르게
+  if(realMarkets(code).length>1){ renderRlist(); render(); }   // 시장 있으면 시트 유지, 시장 고르게
   else { closeSheet(); render(); }
 }
 function pickMarket(key){
@@ -513,8 +530,8 @@ function renderRlist(){
       + arr.map(r=>`<span class="rchip ${r.code===region.code?'on':''}" onclick="pickRegion('${r.code}')">${r.name}</span>`).join('')
       + `</div>`;
   });
-  const mk = HAS_REGIONS && DATA.markets && DATA.markets[region.code];
-  if(mk && mk.length>1){
+  const mk = realMarkets(region.code);
+  if(mk.length>1){
     html += `<div class="rgroup" style="color:var(--accent)">🏪 ${region.name} 안에서</div><div class="rchips">`
       + mk.map(m=>`<span class="rchip ${((m.key==='_all'&&!region.market)||m.key===region.market)?'on':''}" onclick="pickMarket('${m.key}')">${m.name}</span>`).join('')
       + `</div>`;
