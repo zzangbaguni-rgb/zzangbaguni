@@ -169,6 +169,7 @@ def organize(rws):
         reg=o.setdefault(sgg,{"name":it.get("sgg_nm") or sgg,"all":{},"mk":{}})
         add_vrty(reg["all"], it, p, dt)
         mk,mn=mkey_of(it)
+        if not mk: continue          # 시장코드·이름 없는 레코드: 전체평균엔 이미 반영, 개별 시장 칩은 만들지 않음
         m=reg["mk"].setdefault(mk,{"name":mn,"v":{}})
         add_vrty(m["v"], it, p, dt)
     return o
@@ -210,7 +211,7 @@ for code,name,ctgry in ITEMS:
 regions=sorted(region_names.keys(), key=lambda s:-len(byRegion.get(s,[])))
 markets_out={}
 for sgg,mm in markets.items():
-    named=[(k,v) for k,v in mm.items() if k!="_mart"]
+    named=[(k,v) for k,v in mm.items() if k and v and k!="_mart"]
     named.sort(key=lambda kv:-len(byMarket.get(f"{sgg}|{kv[0]}",[])))
     lst=[{"key":"_all","name":"전체 평균"}]+[{"key":k,"name":v} for k,v in named]
     if "_mart" in mm: lst.append({"key":"_mart","name":"대형마트 평균"})
