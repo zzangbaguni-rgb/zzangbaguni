@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: collect            # 동시에 여러 개 안 돌게
+  group: collect
   cancel-in-progress: false
 
 jobs:
@@ -24,20 +24,21 @@ jobs:
         env:
           KAMIS_KEY: ${{ secrets.KAMIS_KEY }}
         run: python3 scripts/collect.py
-      - name: 갱신된 데이터 커밋 (충돌나도 우리 데이터로, 재시도)
+      - name: 데이터 커밋 (rebase 없이 원격에 덮어쓰기, 재시도)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data.json data.js
-          if git diff --cached --quiet; then echo "변동 없음"; exit 0; fi
-          git commit -m "chore: 시세 자동 갱신 $(date +%F)"
+          cp data.json /tmp/data.json
+          cp data.js  /tmp/data.js
           for i in 1 2 3 4 5; do
             git fetch origin main
-            if git rebase -X theirs origin/main; then
-              if git push origin HEAD:main; then echo "push 성공"; exit 0; fi
-            else
-              git rebase --abort 2>/dev/null || true
-            fi
-            echo "재시도 $i..."; sleep $((RANDOM % 5 + 3))
+            git reset --hard origin/main
+            cp /tmp/data.json data.json
+            cp /tmp/data.js  data.js
+            git add data.json data.js
+            if git diff --cached --quiet; then echo "변동 없음"; exit 0; fi
+            git commit -m "chore: 시세 자동 갱신 $(date +%F)"
+            if git push origin HEAD:main; then echo "push 성공"; exit 0; fi
+            echo "원격이 바뀜, 재시도 $i..."; sleep $((RANDOM % 5 + 3))
           done
           echo "push 실패"; exit 1
