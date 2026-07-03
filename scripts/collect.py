@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-# KAMIS 소매가격 수집 -> 저장소 루트 data.json/data.js  (지역별 · 품목당 1줄 = 대표 품종)
-# 실행: python3 scripts/collect.py   (표준 파이썬만, jq 불필요)
-import json, os, urllib.parse, urllib.request, datetime
+# KAMIS 소매가격 수집 -> 저장소 루트 data.json/data.js
+# 지역(시/도)별 + 시장별(전통시장 개별/대형마트 평균). 고기/과일은 부위·품종별.
+# 산지/도매 등 비소매 제외. "새로 나온 것"(지난주 없다가 이번주 등장) 판정 포함.
+# 실행: python3 scripts/collect.py   (표준 파이썬만)
+import json, os, re, urllib.parse, urllib.request, datetime
 HERE=os.path.dirname(os.path.abspath(__file__)); PROJ=os.path.dirname(HERE)
 KEY=os.environ.get("KAMIS_KEY") or open(os.path.join(HERE,".serviceKey")).read().strip()
 OUT=os.path.join(PROJ,"data.json")
 _t=datetime.date.today(); _d=datetime.timedelta
 def _y(x): return x.strftime("%Y%m%d")
-TW=(_y(_t-_d(days=5)), _y(_t-_d(days=1)))    # 최근 5일 -> 가장 최근 조사일
-BL=(_y(_t-_d(days=12)), _y(_t-_d(days=8)))   # 약 1주일 전
+TW=(_y(_t-_d(days=8)), _y(_t-_d(days=1)))    # 최근 8일 -> 가장 최근 조사일(시장이 잘 안 사라지게)
+BL=(_y(_t-_d(days=15)), _y(_t-_d(days=9)))   # 그 전 주 (등락 비교 기준)
 ITEMS=[
   ('111','쌀','100'),
   ('112','찹쌀','100'),
@@ -129,9 +131,12 @@ ITEMS=[
   ('662','고등어필렛','600'),
   ('663','전어','600'),
 ]
+EXCLUDE={"4301","4304","9901","9903","9908"}            # 산지/도매/중복
+VARIETY={"512","514","4401","4402","411","412","414","415"}  # 부위/품종 분리
+MART_RE=re.compile(r'(유통|SSM|백화점|전문점|생협|대형마트|슈퍼|아울렛|마트)')
 URL="https://apis.data.go.kr/B552845/perDay/price"
 def fetch(item,ctgry,s,e):
-    q={"serviceKey":KEY,"returnType":"JSON","numOfRows":"2000","cond[se_cd::EQ]":"01",
+    q={"serviceKey":KEY,"returnType":"JSON","numOfRows":"3000","cond[se_cd::EQ]":"01",
        "cond[ctgry_cd::EQ]":ctgry,"cond[item_cd::EQ]":item,
        "cond[exmn_ymd::GTE]":s,"cond[exmn_ymd::LTE]":e}
     try:
@@ -142,47 +147,78 @@ def fetch(item,ctgry,s,e):
 def rows(js):
     try: return js["response"]["body"]["items"]["item"] or []
     except Exception: return []
-def gather(js):
-    # {sgg: {"name":sgg_nm, "v": { vrty_cd: {"cnt","latest","p":[],"unit"} }}}
-    out={}
-    for it in rows(js):
+def avg(a): return int(sum(a)/len(a)) if a else None
+def mkey_of(it):
+    nm=it.get("mrkt_nm") or ""
+    if MART_RE.search(nm): return ("_mart","대형마트 평균")
+    return (it.get("mrkt_cd") or nm, nm)
+def add_vrty(store, it, p, dt):
+    vc=it.get("vrty_cd")
+    e=store.setdefault(vc,{"vn":it.get("vrty_nm") or "","cnt":0,"latest":"","p":[],"unit":""})
+    e["cnt"]+=1; e["unit"]=(str(it.get("unit_sz") or "")+str(it.get("unit") or ""))
+    if dt> e["latest"]: e["latest"]=dt; e["p"]=[p]
+    elif dt==e["latest"]: e["p"].append(p)
+def organize(rws):
+    o={}
+    for it in rws:
         sgg=it.get("sgg_cd")
         if not sgg: continue
         try: p=float(it.get("exmn_dd_prc"))
         except Exception: continue
         dt=str(it.get("exmn_ymd") or "")
-        reg=out.setdefault(sgg,{"name":it.get("sgg_nm") or sgg,"v":{}})
-        vc=it.get("vrty_cd")
-        e=reg["v"].setdefault(vc,{"cnt":0,"latest":"","p":[],"unit":""})
-        e["cnt"]+=1
-        e["unit"]=(str(it.get("unit_sz") or "")+str(it.get("unit") or ""))
-        if dt> e["latest"]: e["latest"]=dt; e["p"]=[p]
-        elif dt==e["latest"]: e["p"].append(p)
-    return out
-def avg(a): return int(sum(a)/len(a)) if a else None
-
-byRegion={}; region_names={}
-for code,name,ctgry in ITEMS:
-    tw=gather(fetch(code,ctgry,*TW)); bl=gather(fetch(code,ctgry,*BL))
-    for sgg,reg in tw.items():
-        if not reg["v"]: continue
-        rep=max(reg["v"], key=lambda k: reg["v"][k]["cnt"])   # 대표 품종 = 관측 최다
-        e=reg["v"][rep]; now=avg(e["p"])
+        reg=o.setdefault(sgg,{"name":it.get("sgg_nm") or sgg,"all":{},"mk":{}})
+        add_vrty(reg["all"], it, p, dt)
+        mk,mn=mkey_of(it)
+        m=reg["mk"].setdefault(mk,{"name":mn,"v":{}})
+        add_vrty(m["v"], it, p, dt)
+    return o
+def entries(vmap, blv, code, name, is_var, item_new):
+    out=[]
+    keys=list(vmap.keys()) if is_var else ([max(vmap,key=lambda k:vmap[k]["cnt"])] if vmap else [])
+    for vc in keys:
+        e=vmap[vc]; now=avg(e["p"])
         if now is None: continue
-        bv=bl.get(sgg,{}).get("v",{}).get(rep)
-        base=avg(bv["p"]) if bv else None
+        bv=blv.get(vc); base=avg(bv["p"]) if bv else None
         pct=int((now-base)/base*100) if base else None
+        vn=e["vn"]
+        label=(vn if name in vn else f"{name} {vn}") if (is_var and vn and vn!=name) else name
+        d={"code":f"{code}-{vc}","name":label,"price":now,"unit":e["unit"],"base":base,"pct":pct,"asof":e["latest"]}
+        if item_new: d["isNew"]=True
+        out.append(d)
+    return out
+
+byRegion={}; region_names={}; markets={}; byMarket={}
+for code,name,ctgry in ITEMS:
+    if code in EXCLUDE: continue
+    is_var = code in VARIETY
+    tw=organize(rows(fetch(code,ctgry,*TW)))
+    bl=organize(rows(fetch(code,ctgry,*BL)))
+    for sgg,reg in tw.items():
         region_names[sgg]=reg["name"]
-        byRegion.setdefault(sgg,[]).append(
-            {"code":code,"name":name,"price":now,"unit":e["unit"],
-             "base":base,"pct":pct,"asof":e["latest"]})
-    print(f"{name}: 지역 {len(tw)}곳")
+        blreg=bl.get(sgg,{}); blall=blreg.get("all",{})
+        item_new = (len(blall)==0)
+        for e in entries(reg["all"], blall, code, name, is_var, item_new):
+            byRegion.setdefault(sgg,[]).append(e)
+        for mk,m in reg["mk"].items():
+            blmk=blreg.get("mk",{}).get(mk,{}).get("v",{})
+            ent=entries(m["v"], blmk, code, name, is_var, item_new)
+            if ent:
+                markets.setdefault(sgg,{})[mk]=m["name"]
+                byMarket.setdefault(f"{sgg}|{mk}",[]).extend(ent)
+    print(f"{name}{' [부위별]' if is_var else ''}: 지역 {len(tw)}")
 
 regions=sorted(region_names.keys(), key=lambda s:-len(byRegion.get(s,[])))
+markets_out={}
+for sgg,mm in markets.items():
+    named=[(k,v) for k,v in mm.items() if k!="_mart"]
+    named.sort(key=lambda kv:-len(byMarket.get(f"{sgg}|{kv[0]}",[])))
+    lst=[{"key":"_all","name":"전체 평균"}]+[{"key":k,"name":v} for k,v in named]
+    if "_mart" in mm: lst.append({"key":"_mart","name":"대형마트 평균"})
+    if len(lst)>1: markets_out[sgg]=lst
 data={"updated":_t.isoformat(),
       "regions":[{"code":s,"name":region_names[s]} for s in regions],
-      "byRegion":byRegion}
+      "byRegion":byRegion,"markets":markets_out,"byMarket":byMarket}
 open(OUT,"w",encoding="utf-8").write(json.dumps(data,ensure_ascii=False,indent=1))
 open(os.path.join(PROJ,"data.js"),"w",encoding="utf-8").write(
     "window.PRICE_DATA = "+json.dumps(data,ensure_ascii=False)+";\n")
-print(f"\n생성 완료: 지역 {len(regions)}곳, 품목당 1줄 -> {OUT}")
+print(f"\n생성: 지역 {len(regions)}, 시장보유지역 {len(markets_out)} -> {OUT}")
