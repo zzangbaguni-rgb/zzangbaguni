@@ -214,6 +214,22 @@ for sgg,mm in markets.items():
 data={"updated":_t.isoformat(),
       "regions":[{"code":s,"name":region_names[s]} for s in regions],
       "byRegion":byRegion,"markets":markets_out,"byMarket":byMarket}
+
+# 외생 이벤트 알림(기상특보·가축질병 등) — scripts/alerts.json 있으면 앱에 실어줌.
+# 형식: [{"icon":"🌀","msg":"...","until":"2026-07-10"}]  (until 지나면 자동 숨김, 없으면 항상)
+try:
+    with open(os.path.join(HERE,"alerts.json"),encoding="utf-8") as f:
+        raw=json.load(f)
+    today=_t.isoformat()
+    al=[a for a in raw if isinstance(a,dict) and a.get("msg")
+        and (not a.get("until") or a["until"]>=today)]
+    if al: data["alerts"]=al
+    print(f"알림 {len(al)}건 적재")
+except FileNotFoundError:
+    pass
+except Exception as e:
+    print("alerts.json 스킵:", e)
+
 open(OUT,"w",encoding="utf-8").write(json.dumps(data,ensure_ascii=False,indent=1))
 open(os.path.join(PROJ,"data.js"),"w",encoding="utf-8").write(
     "window.PRICE_DATA = "+json.dumps(data,ensure_ascii=False)+";\n")
