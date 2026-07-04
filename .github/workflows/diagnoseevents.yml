@@ -1,0 +1,42 @@
+name: 외생이벤트 API 진단 (기상특보)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: 기상특보 API 응답 덤프
+        env:
+          KAMIS_KEY: ${{ secrets.KAMIS_KEY }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, urllib.parse, urllib.request, datetime, json
+          KEY=os.environ["KAMIS_KEY"]
+          t=datetime.date.today(); d=datetime.timedelta
+          frm=(t-d(days=3)).strftime("%Y%m%d"); to=t.strftime("%Y%m%d")
+          def probe(label, url, params):
+              q=dict(params); q["serviceKey"]=KEY
+              full=url+"?"+urllib.parse.urlencode(q)
+              print("\n===== "+label+" =====")
+              print("URL:", url)
+              try:
+                  req=urllib.request.Request(full, headers={"Accept":"application/json"})
+                  with urllib.request.urlopen(req, timeout=25) as r:
+                      body=r.read().decode("utf-8","replace")
+                  print("HTTP", r.status, "len", len(body))
+                  print(body[:1800])
+              except urllib.error.HTTPError as e:
+                  print("HTTPError", e.code); print(e.read().decode("utf-8","replace")[:1200])
+              except Exception as e:
+                  print("ERR", repr(e)[:200])
+          B="http://apis.data.go.kr/1360000/WthrWrnInfoService"
+          probe("기상특보 목록 getWthrWrnList", B+"/getWthrWrnList",
+                {"dataType":"JSON","pageNo":"1","numOfRows":"10","fromTmFc":frm,"toTmFc":to})
+          probe("기상특보 현황 getPwnStatus", B+"/getPwnStatus",
+                {"dataType":"JSON","pageNo":"1","numOfRows":"10","fromTmFc":frm,"toTmFc":to})
+          PYEOF
