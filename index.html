@@ -40,6 +40,11 @@
   .tabs::-webkit-scrollbar{display:none}
   .tab{flex:0 0 auto;background:#fff;border:1px solid var(--line);border-radius:999px;padding:9px 15px;font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap;color:#6b6b6b}
   .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  /* 시세 부류 둘러보기 칩 */
+  .catrow{display:flex;gap:8px;overflow-x:auto;padding:8px 16px 4px;-webkit-overflow-scrolling:touch}
+  .catrow::-webkit-scrollbar{display:none}
+  .catchip{flex:0 0 auto;background:#fff;border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:14.5px;font-weight:700;cursor:pointer;white-space:nowrap;color:#6b6b6b}
+  .catchip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .tab .cnt{margin-left:6px;font-size:13px;opacity:.65}
   .tab.add{color:#9a9a9a;font-weight:800}
   .listctl{padding:9px 20px 0;font-size:12.5px;color:#b6b6b6;display:flex;gap:14px}
@@ -152,6 +157,15 @@
   .banner{margin:12px 16px 0;padding:13px 15px;border-radius:14px;background:#eef3f8;border:1px solid #d8e3ef;color:#3a6ea5;font-size:14px;line-height:1.5}
   .notice{margin:12px 16px 0;padding:13px 15px;border-radius:14px;background:#fff4e8;border:1px solid #f3d9bd;font-size:14px;line-height:1.5}
   .notice b{color:var(--up)}
+  .notice.good{background:#e9f6ee;border-color:#c3e6d0}
+  .notice.good b{color:var(--down)}
+  .notice.ev{background:#f1eef8;border-color:#ded5f0}
+  .notice.ev b{color:#6b4fb0}
+  /* 시장 vs 마트 비교 */
+  .cmp{display:flex;gap:10px;margin-top:3px;font-size:12px;font-weight:700;flex-basis:100%}
+  .cmp span{color:#b0a7b4}
+  .cmp .win{color:var(--mkt)}
+  .cmp .win.mt{color:var(--mart)}
 
   /* 더보기 */
   .mrow{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:16px;margin:10px 16px 0;padding:16px 18px;font-size:17px;cursor:pointer}
@@ -306,22 +320,33 @@ const REGIONS = (HAS_REGIONS ? DATA.regions : [{code:'_', name:(DATA.market||'�
 const RKEY='region_v2', MKEY='market_v1';
 let _r0 = REGIONS.find(r=>r.code===localStorage.getItem(RKEY)) || REGIONS[0] || {code:'_',name:'기본'};
 let region = {code:_r0.code, name:_r0.name, hasData:true, market:(localStorage.getItem(MKEY)||null)};
+function primarySijang(code){ return (realMarkets(code).find(x=>x.key!=='_all'&&x.key!=='_mart')||{}).key; }
+// 기본(전체) 시세 = 품목별 단일 채널 병합: 전통시장에 있으면 그 값(깨끗한 등락), 없으면 마트, 없으면 지역평균
+function smartItems(code){
+  const base=DATA.byRegion[code]||[];
+  if(!DATA.byMarket) return base;
+  const sjKey=primarySijang(code);
+  const sj=sjKey?(DATA.byMarket[code+'|'+sjKey]||[]):[];
+  const mart=DATA.byMarket[code+'|_mart']||[];
+  const sm={}, mm={}; sj.forEach(i=>{sm[i.name]=i;}); mart.forEach(i=>{mm[i.name]=i;});
+  return base.map(i=> sm[i.name]||mm[i.name]||i);
+}
 function curItems(){
-  if(HAS_REGIONS){
-    if(region.market && region.market!=='_all' && DATA.byMarket){
-      const k=region.code+'|'+region.market;
-      if(DATA.byMarket[k] && DATA.byMarket[k].length) return DATA.byMarket[k];
-    }
-    return DATA.byRegion[region.code]||[];
+  if(!HAS_REGIONS) return DATA.items||[];
+  const mk=region.market;
+  if(mk && mk!=='_all' && DATA.byMarket){
+    const k=region.code+'|'+mk;
+    if(DATA.byMarket[k] && DATA.byMarket[k].length) return DATA.byMarket[k];
   }
-  return DATA.items||[];
+  return smartItems(region.code);   // 기본(null) 또는 '_all' = 병합
 }
 function marketName(){
-  if(region.market && HAS_REGIONS && DATA.markets && DATA.markets[region.code]){
-    const m=(DATA.markets[region.code]||[]).find(x=>x.key===region.market);
+  const mk=region.market;
+  if(mk && mk!=='_all' && HAS_REGIONS && DATA.markets && DATA.markets[region.code]){
+    const m=(DATA.markets[region.code]||[]).find(x=>x.key===mk);
     if(m) return m.name;
   }
-  return null;
+  return null;   // 기본/전체는 지역명 표시
 }
 
 const SEASON = ["오이","호박","감자","방울토마토","열무","가지","옥수수"];
@@ -441,7 +466,7 @@ boxEl.addEventListener('keydown',e=>{ if(e.key==='Enter' && !e.isComposing && e.
 boxEl.addEventListener('input', renderAC);
 boxEl.addEventListener('blur', ()=>setTimeout(hideAC,150));
 const psEl=document.getElementById('priceSearch');
-if(psEl) psEl.addEventListener('input',e=>{ priceQuery=e.target.value; renderPriceTab(); });
+if(psEl) psEl.addEventListener('input',e=>{ priceQuery=e.target.value; if(priceQuery.trim()) priceCat=null; renderPriceTab(); });
 
 function setDate(d){ store.cur=d; save(); render(); }
 function shiftDate(delta){ const dt=new Date(store.cur); dt.setDate(dt.getDate()+delta); setDate(fmt(dt)); }
@@ -534,8 +559,8 @@ function pickRegion(code){
 }
 function backToRegions(){ sheetView='regions'; renderRlist(); }
 function pickMarket(key){
-  region.market = (key==='_all'? null : key);
-  if(region.market) localStorage.setItem(MKEY, region.market); else localStorage.removeItem(MKEY);
+  region.market = key;                 // '_all'(전체평균)도 명시적 선택으로 저장 (기본은 전통시장이므로)
+  localStorage.setItem(MKEY, key);
   closeSheet(); render();
 }
 const METRO={'11':'서울','21':'부산','22':'대구','23':'인천','24':'광주','25':'대전','26':'울산','27':'세종','31':'경기','32':'강원','33':'충북','34':'충남','35':'전북','36':'전남','37':'경북','38':'경남','39':'제주','99':'온라인','10':'전국'};
@@ -579,11 +604,12 @@ function renderMarketPage(){
   const rname=(REGIONS.find(r=>r.code===sheetRegion)||{}).name || '';
   const mk=realMarkets(sheetRegion);
   const meta=m=>{
-    if(m.key==='_all') return {ic:'📊', sub:'이 지역 조사 시장 전체 평균'};
+    if(m.key==='_all') return {ic:'📊', sub:'전통시장 우선 · 없으면 마트 (기본)'};
     if(m.key==='_mart') return {ic:'🛒', sub:'대형마트 평균 (익명 집계)'};
     return {ic:'🏪', sub:MARKET_LOC[m.key]||'전통시장'};
   };
-  const sel=m=> (m.key==='_all'&&(sheetRegion!==region.code||!region.market)) || (sheetRegion===region.code&&m.key===region.market);
+  const curKey=(sheetRegion===region.code)?(region.market||'_all'):'_all';
+  const sel=m=> m.key===curKey;
   let html=`<div class="shhead"><button class="shback" onclick="backToRegions()" aria-label="뒤로">‹</button><h3>${rname} 시장 고르기</h3></div>`
     + `<div class="shsub">보고 싶은 시장을 고르면 그 시장 기준 시세로 바뀌어요.</div><div class="mklist">`;
   mk.forEach(m=>{ const x=meta(m);
@@ -636,7 +662,35 @@ function renderCart(){
   }
   el.innerHTML = `<div class="basketWrap"><div class="handle"></div><div class="basket"><div class="rim"></div>${inner}</div></div>`;
 }
-let priceQuery='';
+let priceQuery='', priceCat=null;
+// 품목 → 부류 분류 (데이터에 cat 있으면 우선, 없으면 코드로 판별)
+const CAT_ORDER=[['채소','🥬'],['과일','🍎'],['축산','🥩'],['수산','🐟'],['식량','🌾'],['특용','🌰']];
+const CATMAP={'100':'식량','200':'채소','300':'특용','400':'과일','500':'축산','600':'수산'};
+function catOf(it){
+  if(it.cat && CATMAP[it.cat]) return CATMAP[it.cat];
+  const c=String(it.code||'').split('-')[0];
+  if(['4301','4304','4401','4402','9901','9903','9908','512','514','515','516','520','535'].includes(c)) return '축산';
+  if(c==='422') return '채소';
+  const n=+c;
+  if(n>=100&&n<200) return '식량';
+  if(n>=200&&n<300) return '채소';
+  if(n>=400&&n<500) return '과일';
+  if(n>=600&&n<700) return '수산';
+  if(n>=300&&n<400) return '특용';
+  return '기타';
+}
+function pickCat(c){ priceCat=(priceCat===c?null:c); priceQuery=''; const s=document.getElementById('priceSearch'); if(s) s.value=''; renderPriceTab(); }
+function catChips(){
+  const have=new Set(curItems().filter(i=>i.price!=null).map(catOf));
+  const chips=CAT_ORDER.filter(([c])=>have.has(c));
+  if(chips.length<2) return '';
+  return `<div class="catrow">`+chips.map(([c,ic])=>`<span class="catchip ${priceCat===c?'on':''}" onclick="pickCat('${c}')">${ic} ${c}</span>`).join('')+`</div>`;
+}
+// KAMIS가 다루는 품목명(코드는 고정). 조사만 이번 주 안 됐을 수 있어 — 검색 시 오류 오해 방지용
+const KNOWN_ITEMS=["쌀","찹쌀","혼합곡","기장","보리쌀","콩","팥","녹두","메밀","고구마","감자","귀리","보리","수수","율무","배추","양배추","시금치","상추","얼갈이배추","갓","연근","우엉","수박","참외","오이","호박","토마토","딸기","무","당근","열무","건고추","풋고추","붉은고추","피마늘","양파","파","대파","생강","고춧가루","가지","미나리","깻잎","부추","피망","파프리카","멜론","마늘","깐마늘","브로콜리","양상추","청경채","케일","콩나물","절임배추","알배기배추","방울토마토","사과","배","복숭아","포도","감귤","단감","바나나","참다래","파인애플","오렌지","자몽","레몬","체리","건포도","건블루베리","망고","블루베리","아보카도","소고기","쇠고기","돼지고기","닭고기","계란","달걀","우유","오리고기","고등어","꽁치","갈치","조기","명태","삼치","오징어","멸치","북어","김","미역","염장미역","굴","넙치","우럭","새우젓","멸치액젓","천일염","전복","새우","꽃게","홍합","가리비","다시마","바지락","전어"];
+function isKnownItem(q){ return KNOWN_ITEMS.some(nm=> nm.includes(q) || q.includes(nm)); }
+// 받침 있으면 '은', 없으면 '는' (한글 끝일 때만 판별)
+function josaEun(w){ const c=w.charCodeAt(w.length-1); return (c>=0xAC00&&c<=0xD7A3&&(c-0xAC00)%28!==0)?'은':'는'; }
 function asofLabel(){
   let mx=''; curItems().forEach(i=>{ if(i.asof && i.asof>mx) mx=i.asof; });
   const s = mx || (DATA.updated||'').replace(/-/g,'');
@@ -645,12 +699,34 @@ function asofLabel(){
   const w=['일','월','화','수','목','금','토'][new Date(y,m-1,d).getDay()];
   return `${m}월 ${d}일 (${w})`;
 }
+// 시장 vs 마트 비교 — 현재 지역의 대표 전통시장 가격 vs 대형마트 평균
+let _cmp=null;
+function buildCmp(){
+  _cmp=null;
+  if(!HAS_REGIONS || !DATA.byMarket) return;
+  const mart=DATA.byMarket[region.code+'|_mart']; if(!mart||!mart.length) return;
+  // 비교의 시장쪽 = 현재 전통시장을 보고 있으면 그 시장, 아니면 대표 전통시장 (헤드라인과 일치)
+  const em=region.market;
+  const sjKey=(em&&em!=='_all'&&em!=='_mart')? em : primarySijang(region.code);
+  const sjArr=sjKey? DATA.byMarket[region.code+'|'+sjKey]:null; if(!sjArr||!sjArr.length) return;
+  const mm={}, sm={};
+  mart.forEach(i=>{ if(i.price!=null) mm[i.name]=i.price; });
+  sjArr.forEach(i=>{ if(i.price!=null) sm[i.name]=i.price; });
+  _cmp={mart:mm, sijang:sm};
+}
+function cmpLine(it){
+  if(!_cmp) return '';
+  const s=_cmp.sijang[it.name], m=_cmp.mart[it.name];
+  if(s==null||m==null||s===m) return '';
+  const sWin=s<m;
+  return `<div class="cmp"><span class="${sWin?'win':''}">🏪 시장 ${s.toLocaleString()}</span><span class="${!sWin?'win mt':''}">🛒 마트 ${m.toLocaleString()}</span></div>`;
+}
 function priceRow(it){
   const e=esc(it.name), fav=isFav(it.name);
   const season=SEASON.includes(it.name)?'<span class="tag season">제철</span>':'';
   const nw=it.isNew?'<span class="tag new">new!</span>':'';
   return `<div class="row">
-      <div class="nm"><span class="t">${it.name}</span>${season}${nw}<span class="star ${fav?'on':''}" onclick="toggleFav('${e}')">${fav?'★':'☆'}</span></div>
+      <div class="nm"><span class="t">${it.name}</span>${season}${nw}<span class="star ${fav?'on':''}" onclick="toggleFav('${e}')">${fav?'★':'☆'}</span>${cmpLine(it)}</div>
       <div class="price">${priceText(it)}${badge(it)}</div>
       <div class="plus" onclick="addByName('${e}',true)">＋담기</div>
     </div>`;
@@ -659,27 +735,36 @@ function priceSection(title, arr, info){
   const ic = info ? ` <span class="infoi" onclick="${info}">ⓘ</span>` : '';
   return arr.length ? `<div class="secttl">${title}${ic}</div><div class="card">${arr.map(priceRow).join('')}</div>` : '';
 }
-function noticeHTML(){
-  const up=curItems().filter(i=>i.pct!=null).sort((a,b)=>b.pct-a.pct)[0]; let h='';
-  if(up&&up.pct>=20) h+=`<div class="notice">⚠️ <b>${up.name}</b> 값이 지난주보다 <b>${up.pct}% ↑</b> 올랐어요.</div>`;
-  h+=`<div class="notice">🥚 <b>계란 수급 주의</b> — 조류독감(AI) 영향으로 값이 들쭉날쭉할 수 있어요.</div>`;
-  return h;
+// 외생 이벤트 알림 — collect.py가 data.alerts에 넣어주면 표시(기상특보·가축질병 등)
+function alertsHTML(){
+  const a=DATA.alerts; if(!Array.isArray(a)||!a.length) return '';
+  return a.filter(x=>x&&x.msg).map(x=>`<div class="notice ev">${x.icon||'📢'} ${esc(x.msg)}</div>`).join('');
 }
 function renderPriceTab(){
   const body=document.getElementById('priceBody'); if(!body) return;
   if(!region.hasData){ body.innerHTML=`<div class="banner">📍 <b>${region.name}</b> 시세는 준비 중이에요. 장바구니는 그대로 쓸 수 있어요.</div>`; return; }
-  const hdr = `<div class="asof">📅 ${asofLabel()} 조사 기준 · 매일 갱신</div>`;
+  buildCmp();
+  const hdr = `<div class="asof">📅 ${asofLabel()} 조사 기준 · 매일 갱신</div>` + alertsHTML() + catChips();
   const q=(priceQuery||'').trim();
   if(q){
     const res=curItems().filter(i=>i.price!=null && i.name.includes(q));
-    body.innerHTML = hdr + (res.length ? priceSection(`검색 결과 "${q}"`, res) : `<div class="empty">'${q}' 시세가 없어요.</div>`);
+    if(res.length){ body.innerHTML = hdr + priceSection(`검색 결과 "${q}"`, res); }
+    else if(isKnownItem(q)){
+      body.innerHTML = hdr + `<div class="empty"><span class="big">🗓️</span><b>${esc(q)}</b>${josaEun(q)} 이번 주 조사가 없어요.<br><span style="color:#c0b6c4">제철이 아니거나 이번 주 빠진 거예요.</span></div>`;
+    }
+    else{ body.innerHTML = hdr + `<div class="empty"><span class="big">🔍</span>'${esc(q)}' 품목은 시세 목록에 없어요.<br><span style="color:#c0b6c4">KAMIS가 조사하는 농·축·수산물만 시세가 붙어요.</span></div>`; }
+    return;
+  }
+  if(priceCat){
+    const items=curItems().filter(i=>i.price!=null && catOf(i)===priceCat).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    body.innerHTML = hdr + (items.length ? priceSection(`${priceCat} 전체 (${items.length})`, items) : `<div class="empty">이 지역엔 ${priceCat} 시세가 없어요.</div>`);
     return;
   }
   const priced=curItems().filter(i=>i.price!=null);
   const favs=priced.filter(i=>store.favorites.includes(i.name));
   const news=priced.filter(i=>i.isNew);
   const vol=priced.filter(i=>i.pct!=null && Math.abs(i.pct)>=12).sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct)).slice(0,10);
-  body.innerHTML = hdr + noticeHTML()
+  body.innerHTML = hdr
     + priceSection('⭐ 즐겨찾기 시세', favs)
     + priceSection('🆕 이번 주 새로 나온 것', news, 'openNew()')
     + priceSection('📈 변동이 큰 품목', vol)
