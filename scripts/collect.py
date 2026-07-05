@@ -215,20 +215,53 @@ data={"updated":_t.isoformat(),
       "regions":[{"code":s,"name":region_names[s]} for s in regions],
       "byRegion":byRegion,"markets":markets_out,"byMarket":byMarket}
 
-# 외생 이벤트 알림(기상특보·가축질병 등) — scripts/alerts.json 있으면 앱에 실어줌.
-# 형식: [{"icon":"🌀","msg":"...","until":"2026-07-10"}]  (until 지나면 자동 숨김, 없으면 항상)
-try:
-    with open(os.path.join(HERE,"alerts.json"),encoding="utf-8") as f:
-        raw=json.load(f)
-    today=_t.isoformat()
-    al=[a for a in raw if isinstance(a,dict) and a.get("msg")
-        and (not a.get("until") or a["until"]>=today)]
-    if al: data["alerts"]=al
-    print(f"알림 {len(al)}건 적재")
-except FileNotFoundError:
-    pass
-except Exception as e:
-    print("alerts.json 스킵:", e)
+# ── 외생 이벤트 알림 ───────────────────────────────────────────────
+# 기상청 기상특보(특보현황) → 작황 영향 알림. 실패해도 수집은 절대 안 깨지게 방어적.
+def weather_alerts():
+    key=os.environ.get("KMA_KEY") or os.environ.get("KAMIS_KEY")   # 같은 data.go.kr 계정이면 KAMIS_KEY로도 됨
+    if not key: return []
+    url="https://apis.data.go.kr/1360000/WthrWrnInfoService/getPwnStatus"
+    q={"serviceKey":key,"dataType":"JSON","numOfRows":"10","pageNo":"1"}
+    try:
+        with urllib.request.urlopen(url+"?"+urllib.parse.urlencode(q),timeout=15) as r:
+            js=json.load(r)
+        items=js.get("response",{}).get("body",{}).get("items",{})
+        items=items.get("item",[]) if isinstance(items,dict) else []
+        if isinstance(items,dict): items=[items]
+        items=[it for it in items if isinstance(it,dict) and it.get("t6")]
+        if not items: return []
+        latest=max(items,key=lambda it:str(it.get("tmFc") or ""))
+        t6=str(latest.get("t6") or "")
+        # 작황에 영향 주는 육상 특보만 (해상 풍랑·강풍 등은 제외)
+        RULES=[("태풍","🌀","태풍 특보 발효 중 — 채소·과일 작황에 영향 줄 수 있어요"),
+               ("호우","🌧️","호우 특보 발효 중 — 잎채소·과일 침수·작황 영향 가능"),
+               ("폭염","🔥","폭염 특보 발효 중 — 채소 생육·물가에 영향 줄 수 있어요"),
+               ("대설","❄️","대설 특보 발효 중 — 시설채소·출하에 영향 가능"),
+               ("한파","🥶","한파 특보 발효 중 — 시설채소·과일에 영향 가능")]
+        out=[]
+        for kw,icon,msg in RULES:
+            if kw in t6: out.append({"icon":icon,"msg":msg,"src":"기상청 특보현황"})
+        return out
+    except Exception as e:
+        print("기상특보 스킵:", e); return []
+
+# scripts/alerts.json(수기, until 만료일 지원) — 형식: [{"icon":"🌀","msg":"...","until":"2026-07-10"}]
+def manual_alerts():
+    try:
+        with open(os.path.join(HERE,"alerts.json"),encoding="utf-8") as f:
+            raw=json.load(f)
+        today=_t.isoformat()
+        return [a for a in raw if isinstance(a,dict) and a.get("msg")
+                and (not a.get("until") or a["until"]>=today)]
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        print("alerts.json 스킵:", e); return []
+
+alerts = weather_alerts() + manual_alerts()   # 자동(기상) 먼저, 수기 뒤
+if alerts:
+    data["alerts"]=alerts
+    print(f"알림 {len(alerts)}건 적재")
 
 open(OUT,"w",encoding="utf-8").write(json.dumps(data,ensure_ascii=False,indent=1))
 open(os.path.join(PROJ,"data.js"),"w",encoding="utf-8").write(
