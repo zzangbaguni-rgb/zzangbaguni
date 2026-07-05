@@ -219,17 +219,25 @@ data={"updated":_t.isoformat(),
 # 기상청 기상특보(특보현황) → 작황 영향 알림. 실패해도 수집은 절대 안 깨지게 방어적.
 def weather_alerts():
     key=os.environ.get("KMA_KEY") or os.environ.get("KAMIS_KEY")   # 같은 data.go.kr 계정이면 KAMIS_KEY로도 됨
-    if not key: return []
+    if not key: print("[기상특보] 키 없음(KMA_KEY/KAMIS_KEY) — 스킵"); return []
     url="https://apis.data.go.kr/1360000/WthrWrnInfoService/getPwnStatus"
     q={"serviceKey":key,"dataType":"JSON","numOfRows":"10","pageNo":"1"}
     try:
         with urllib.request.urlopen(url+"?"+urllib.parse.urlencode(q),timeout=15) as r:
-            js=json.load(r)
+            body=r.read().decode("utf-8","replace")
+        try:
+            js=json.loads(body)
+        except Exception:
+            print("[기상특보] 응답이 JSON 아님(키 미승인/오류 가능):", " ".join(body.split())[:160]); return []
+        hdr=js.get("response",{}).get("header",{}) or {}
+        code=str(hdr.get("resultCode",""))
+        if code and code not in ("00","0"):
+            print("[기상특보] API 코드", code, hdr.get("resultMsg","")); return []
         items=js.get("response",{}).get("body",{}).get("items",{})
         items=items.get("item",[]) if isinstance(items,dict) else []
         if isinstance(items,dict): items=[items]
         items=[it for it in items if isinstance(it,dict) and it.get("t6")]
-        if not items: return []
+        if not items: print("[기상특보] 조회 성공 · 발효 특보 없음"); return []
         latest=max(items,key=lambda it:str(it.get("tmFc") or ""))
         t6=str(latest.get("t6") or "")
         # 작황에 영향 주는 육상 특보만 (해상 풍랑·강풍 등은 제외)
@@ -238,9 +246,8 @@ def weather_alerts():
                ("폭염","🔥","폭염 특보 발효 중 — 채소 생육·물가에 영향 줄 수 있어요"),
                ("대설","❄️","대설 특보 발효 중 — 시설채소·출하에 영향 가능"),
                ("한파","🥶","한파 특보 발효 중 — 시설채소·과일에 영향 가능")]
-        out=[]
-        for kw,icon,msg in RULES:
-            if kw in t6: out.append({"icon":icon,"msg":msg,"src":"기상청 특보현황"})
+        out=[{"icon":ic,"msg":msg,"src":"기상청 특보현황"} for kw,ic,msg in RULES if kw in t6]
+        print("[기상특보] 발효현황:", " ".join(t6.split())[:120], "|| 작황특보:", ",".join(kw for kw,_,_ in RULES if kw in t6) or "없음")
         return out
     except Exception as e:
         print("기상특보 스킵:", e); return []
